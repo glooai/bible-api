@@ -135,8 +135,8 @@ def generate_bible(bible_translation, show_progress=True):
         with open(in_name, 'r') as input_file:
             output_file.write(
                 "create table " + bible_translation.lower() + "(book_id int not null, book varchar(255) not null, "
-                                                              "chapter"
-                                                              "int not null, verse int not null, text varchar(1000) not"
+                                                              "chapter "
+                                                              "int not null, verse int not null, text varchar(1000) not "
                                                               "null, primary key (book_id, chapter, verse));\n\n")
 
             cd = json.load(input_file)
