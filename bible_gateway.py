@@ -60,9 +60,7 @@ def combine(folder, n):
                         for chapter, verses in chapters.items():
                             for verse_num, verse_content in verses.items():
                                 # Replace newline characters and excess spaces with a single space
-                                cleaned_verse_content = re.sub(r'\s+', ' ', verse_content)
-                                cleaned_verse_content = cleaned_verse_content.replace("'", "''")
-                                data[book][chapter][verse_num] = cleaned_verse_content.strip()
+                                data[book][chapter][verse_num] = verse_content.strip()
 
                     combined_data.update(data)
             except json.JSONDecodeError as e:
@@ -148,6 +146,8 @@ def generate_bible(bible_translation, show_progress=True):
                                                                      "VALUES\n")
                     for verse_num, verse_content in verses.items():
                         book_id = books.index(book) + 1
+                        verse_content = re.sub(r'\s+', ' ', verse_content)
+                        verse_content = verse_content.replace("'", "''")
                         output_file.write("(" + str(
                             book_id) + ",'" + book + "'," + chapter + "," + verse_num + ",'" + verse_content + "')")
                         # Check if it's the last line
