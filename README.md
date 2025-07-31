@@ -43,3 +43,15 @@ I will add more versions as they are supported by the <a href="https://github.co
 
 If you would like more resources, I have found that the 
 [Holy-Bible-XML-Format](https://github.com/Beblia/Holy-Bible-XML-Format) is a great repo if you are willing to use XML. 
+
+# Disclaimer
+
+The Bible text files provided in this repository are for educational, personal, non-commercial, and reference purposes only.
+
+Many of the Bible translations listed here are protected by copyright and may not be legally redistributed or used in other projects without explicit permission from their respective copyright holders.
+
+Bible text is retrieved via the [meaningless](https://github.com/daniel-tran/meaningless) package, which sources content from [BibleGateway.com](https://www.biblegateway.com). Use of this content may be subject to BibleGateway’s Terms of Service and the individual licenses for each Bible translation. Some translations (such as KJV, ASV, YLT, and WEB) are in the public domain and may be freely used. Others (e.g., ESV, NIV, NLT, NASB, etc.) are licensed, and require permission for redistribution or certain uses.
+
+You are solely responsible for ensuring you have the proper rights or licenses before using, distributing, or publishing any of these translations.
+
+This project does not claim ownership of any Bible text and is not affiliated with BibleGateway or any copyright holder.
