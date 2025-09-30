@@ -13,6 +13,7 @@ I will add more versions as they are supported by the <a href="https://github.co
  * **ASV**
  * **AKJV**
  * **BRG**
+ * **CSB**
  * **EHV**
  * **ESV**
  * **ESVUK**
