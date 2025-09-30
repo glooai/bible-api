@@ -2,7 +2,6 @@
 <p align=center>
   <img alt="Github Created At" src="https://img.shields.io/github/created-at/jadenzaleski/BibleTranslations?style=flat-square&color=orange">
   <img alt="GitHub last commit" src="https://img.shields.io/github/last-commit/jadenzaleski/BibleTranslations?style=flat-square">
-  <img alt="visits" src="https://badges.pufler.dev/visits/jadenzaleski/BibleTranslations?style=flat-square&color=blue&logo=data:image/svg%2bxml;base64,PCFET0NUWVBFIHN2ZyBQVUJMSUMgIi0vL1czQy8vRFREIFNWRyAxLjEvL0VOIiAiaHR0cDovL3d3dy53My5vcmcvR3JhcGhpY3MvU1ZHLzEuMS9EVEQvc3ZnMTEuZHRkIj4KDTwhLS0gVXBsb2FkZWQgdG86IFNWRyBSZXBvLCB3d3cuc3ZncmVwby5jb20sIFRyYW5zZm9ybWVkIGJ5OiBTVkcgUmVwbyBNaXhlciBUb29scyAtLT4KPHN2ZyB3aWR0aD0iODAwcHgiIGhlaWdodD0iODAwcHgiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KDTxnIGlkPSJTVkdSZXBvX2JnQ2FycmllciIgc3Ryb2tlLXdpZHRoPSIwIi8+Cg08ZyBpZD0iU1ZHUmVwb190cmFjZXJDYXJyaWVyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KDTxnIGlkPSJTVkdSZXBvX2ljb25DYXJyaWVyIj4gPHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBjbGlwLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik02LjMwMTQ3IDE1LjU3NzFDNC43NzgzMiAxNC4yNjg0IDMuNjkwNCAxMi43NzI2IDMuMTgwMDIgMTJDMy42OTA0IDExLjIyNzQgNC43NzgzMiA5LjczMTU4IDYuMzAxNDcgOC40MjI5NEM3Ljg3NDAyIDcuMDcxODUgOS44MTU3NCA2IDEyIDZDMTQuMTg0MyA2IDE2LjEyNjEgNy4wNzE4NSAxNy42OTg2IDguNDIyOTRDMTkuMjIxOCA5LjczMTU4IDIwLjMwOTcgMTEuMjI3NCAyMC44MjAxIDEyQzIwLjMwOTcgMTIuNzcyNiAxOS4yMjE4IDE0LjI2ODQgMTcuNjk4NiAxNS41NzcxQzE2LjEyNjEgMTYuOTI4MiAxNC4xODQzIDE4IDEyIDE4QzkuODE1NzQgMTggNy44NzQwMiAxNi45MjgyIDYuMzAxNDcgMTUuNTc3MVpNMTIgNEM5LjE0NzU0IDQgNi43NTcxNyA1LjM5NDYyIDQuOTk4MTIgNi45MDU5NUMzLjIzMjY4IDguNDIyNzYgMi4wMDc1NyAxMC4xMzc2IDEuNDYzODcgMTAuOTY5OEMxLjA1MzA2IDExLjU5ODUgMS4wNTMwNiAxMi40MDE1IDEuNDYzODcgMTMuMDMwMkMyLjAwNzU3IDEzLjg2MjQgMy4yMzI2OCAxNS41NzcyIDQuOTk4MTIgMTcuMDk0MUM2Ljc1NzE3IDE4LjYwNTQgOS4xNDc1NCAyMCAxMiAyMEMxNC44NTI1IDIwIDE3LjI0MjkgMTguNjA1NCAxOS4wMDIgMTcuMDk0MUMyMC43Njc0IDE1LjU3NzIgMjEuOTkyNSAxMy44NjI0IDIyLjUzNjIgMTMuMDMwMkMyMi45NDcgMTIuNDAxNSAyMi45NDcgMTEuNTk4NSAyMi41MzYyIDEwLjk2OThDMjEuOTkyNSAxMC4xMzc2IDIwLjc2NzQgOC40MjI3NiAxOS4wMDIgNi45MDU5NUMxNy4yNDI5IDUuMzk0NjIgMTQuODUyNSA0IDEyIDRaTTEwIDEyQzEwIDEwLjg5NTQgMTAuODk1NSAxMCAxMiAxMEMxMy4xMDQ2IDEwIDE0IDEwLjg5NTQgMTQgMTJDMTQgMTMuMTA0NiAxMy4xMDQ2IDE0IDEyIDE0QzEwLjg5NTUgMTQgMTAgMTMuMTA0NiAxMCAxMlpNMTIgOEM5Ljc5MDkgOCA4LjAwMDA0IDkuNzkwODYgOC4wMDAwNCAxMkM4LjAwMDA0IDE0LjIwOTEgOS43OTA5IDE2IDEyIDE2QzE0LjIwOTIgMTYgMTYgMTQuMjA5MSAxNiAxMkMxNiA5Ljc5MDg2IDE0LjIwOTIgOCAxMiA4WiIgZmlsbD0iI2ZmZmZmZiIvPiA8L2c+Cg08L3N2Zz4="/>
 </p>
 
 <p>Here you can find all of The Holy Bible translations that are availabe at <a href="https://www.biblegateway.com">Bible Gateway</a>, in JSON and SQL format.
@@ -45,3 +44,15 @@ I will add more versions as they are supported by the <a href="https://github.co
 
 If you would like more resources, I have found that the 
 [Holy-Bible-XML-Format](https://github.com/Beblia/Holy-Bible-XML-Format) is a great repo if you are willing to use XML. 
+
+# Disclaimer
+
+The Bible text files provided in this repository are for educational, personal, non-commercial, and reference purposes only.
+
+Many of the Bible translations listed here are protected by copyright and may not be legally redistributed or used in other projects without explicit permission from their respective copyright holders.
+
+Bible text is retrieved via the [meaningless](https://github.com/daniel-tran/meaningless) package, which sources content from [BibleGateway.com](https://www.biblegateway.com). Use of this content may be subject to BibleGateway’s Terms of Service and the individual licenses for each Bible translation. Some translations (such as KJV, ASV, YLT, and WEB) are in the public domain and may be freely used. Others (e.g., ESV, NIV, NLT, NASB, etc.) are licensed, and require permission for redistribution or certain uses.
+
+You are solely responsible for ensuring you have the proper rights or licenses before using, distributing, or publishing any of these translations.
+
+This project does not claim ownership of any Bible text and is not affiliated with BibleGateway or any copyright holder.
