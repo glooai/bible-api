@@ -9,6 +9,7 @@ Text is downloaded with the help of the <a href="https://github.com/daniel-tran/
 I will add more versions as they are supported by the <a href="https://github.com/daniel-tran/meaningless">meaningless</a> package.</p>
 <h3>Available Translations:</h3>
 
+ * **AMP**
  * **ASV**
  * **AKJV**
  * **BRG**
