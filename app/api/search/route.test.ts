@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createRequest = (headers?: Record<string, string>) => {
-  const init: RequestInit = {};
+  const init: ConstructorParameters<typeof NextRequest>[1] = {};
 
   if (headers) {
     init.headers = new Headers(headers);
