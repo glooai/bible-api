@@ -1,0 +1,3 @@
+lib/bible/**/*.json
+lib/bible/README.md
+pnpm-lock.yaml
