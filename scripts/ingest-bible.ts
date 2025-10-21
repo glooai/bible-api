@@ -34,6 +34,12 @@ const DEFAULT_TRANSLATION = "NLT";
 const DEFAULT_DIMENSION = 384;
 const DEFAULT_BLOB_ENDPOINT = "https://blob.vercel-storage.com";
 const DEFAULT_BLOB_PREFIX = "translations";
+const LOCAL_MANIFEST_PATH = path.join(
+  __dirname,
+  "..",
+  "data",
+  "translations-manifest.json",
+);
 
 async function main() {
   await loadEnvFromLocalFile();
@@ -232,11 +238,26 @@ async function syncTranslationsWithBlob(): Promise<void> {
   const prefix = blobPrefix();
   const manifestKey = `${prefix}/manifest.json`;
   const manifest = await readBlobManifest(manifestKey, token);
+  const localManifest = await readLocalManifest();
   let manifestDirty = false;
+  let localManifestDirty = false;
+  let quotaExceeded = false;
+  const forceUpload = process.env.FORCE_BLOB_UPLOAD === "true";
 
   console.log(
     `Loaded manifest with ${Object.keys(manifest).length} entries from ${manifestKey}.`,
   );
+
+  if (Object.keys(localManifest).length > 0) {
+    console.log(
+      `Loaded local manifest cache with ${Object.keys(localManifest).length} entries from ${path.relative(projectRoot(), LOCAL_MANIFEST_PATH)}.`,
+    );
+  }
+  if (forceUpload) {
+    console.log(
+      "FORCE_BLOB_UPLOAD is enabled; all translations will be re-uploaded.",
+    );
+  }
 
   let entries: Dirent[];
   try {
@@ -250,6 +271,10 @@ async function syncTranslationsWithBlob(): Promise<void> {
   }
 
   for (const entry of entries) {
+    if (quotaExceeded) {
+      break;
+    }
+
     if (!entry.isDirectory()) {
       continue;
     }
@@ -266,21 +291,34 @@ async function syncTranslationsWithBlob(): Promise<void> {
     }
 
     try {
-      const changed = await syncTranslationFileToBlob({
-        translation,
-        filePath,
-        token,
-        prefix,
-        manifest,
-      });
-      if (changed) {
+      const { remoteManifestChanged, localManifestChanged } =
+        await syncTranslationFileToBlob({
+          translation,
+          filePath,
+          token,
+          prefix,
+          remoteManifest: manifest,
+          localManifest,
+          forceUpload,
+        });
+      if (remoteManifestChanged) {
         manifestDirty = true;
+      }
+      if (localManifestChanged) {
+        localManifestDirty = true;
       }
     } catch (error) {
       console.warn(
         `Failed to upload ${translation} translation to Blob storage.`,
         error,
       );
+
+      if (isQuotaExceededError(error)) {
+        quotaExceeded = true;
+        console.warn(
+          "Blob storage quota exceeded. Skipping remaining translation uploads.",
+        );
+      }
     }
   }
 
@@ -302,6 +340,34 @@ async function syncTranslationsWithBlob(): Promise<void> {
       );
     }
   }
+
+  if (localManifestDirty) {
+    try {
+      await writeLocalManifest(localManifest);
+      console.log(
+        `Updated local manifest cache at ${path.relative(projectRoot(), LOCAL_MANIFEST_PATH)}.`,
+      );
+    } catch (error) {
+      console.warn("Failed to update local manifest cache.", error);
+    }
+  }
+}
+
+function isQuotaExceededError(error: unknown): boolean {
+  if (error instanceof Error) {
+    const message = `${error.message}${
+      typeof error.cause === "object" && error.cause !== null
+        ? ` ${(error.cause as Error).message ?? ""}`
+        : ""
+    }`;
+    return message.includes("Storage quota exceeded");
+  }
+
+  if (typeof error === "string") {
+    return error.includes("Storage quota exceeded");
+  }
+
+  return false;
 }
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -318,7 +384,14 @@ type SyncTranslationOptions = {
   filePath: string;
   token: string;
   prefix: string;
-  manifest: BlobManifest;
+  remoteManifest: BlobManifest;
+  localManifest: BlobManifest;
+  forceUpload: boolean;
+};
+
+type SyncTranslationResult = {
+  remoteManifestChanged: boolean;
+  localManifestChanged: boolean;
 };
 
 async function syncTranslationFileToBlob({
@@ -326,19 +399,103 @@ async function syncTranslationFileToBlob({
   filePath,
   token,
   prefix,
-  manifest,
-}: SyncTranslationOptions): Promise<boolean> {
+  remoteManifest,
+  localManifest,
+  forceUpload,
+}: SyncTranslationOptions): Promise<SyncTranslationResult> {
   const buffer = await fs.readFile(filePath);
-  const hash = createSha256(buffer);
+  const hashSha256 = createSha256(buffer);
+  const hashMd5 = createMd5(buffer);
   const translationKey = `${prefix}/${translation}/${translation}_bible.json`;
 
-  const existing = manifest[translation];
+  const remoteEntry = remoteManifest[translation];
+  const localEntry = localManifest[translation];
 
-  if (existing?.hash === hash) {
+  if (!forceUpload && localEntry?.hash === hashSha256) {
+    const needsRemoteUpdate =
+      !remoteEntry ||
+      remoteEntry.hash !== localEntry.hash ||
+      remoteEntry.size !== localEntry.size;
+
+    remoteManifest[translation] = localEntry;
+
     console.log(
-      `Blob translation ${translation} is up to date (hash ${hash.slice(0, 8)}).`,
+      `Translation ${translation} matches local manifest (hash ${hashSha256.slice(0, 8)}). Skipping upload.`,
     );
-    return false;
+
+    return {
+      remoteManifestChanged: needsRemoteUpdate,
+      localManifestChanged: false,
+    };
+  }
+
+  if (!forceUpload && remoteEntry?.hash === hashSha256) {
+    if (!localEntry || localEntry.hash !== hashSha256) {
+      localManifest[translation] = remoteEntry;
+      return { remoteManifestChanged: false, localManifestChanged: true };
+    }
+
+    console.log(
+      `Blob translation ${translation} is up to date (hash ${hashSha256.slice(0, 8)}).`,
+    );
+
+    return { remoteManifestChanged: false, localManifestChanged: false };
+  }
+
+  let metadata: BlobMetadata | null = null;
+
+  if (!forceUpload) {
+    try {
+      metadata = await getBlobMetadata(translationKey, token);
+    } catch (error) {
+      console.warn(
+        `Unable to inspect remote translation ${translation}. Proceeding with upload.`,
+        error,
+      );
+    }
+
+    if (metadata?.exists) {
+      const etag = metadata.etag;
+      const sizeMatches =
+        typeof metadata.contentLength !== "number" ||
+        metadata.contentLength === buffer.byteLength;
+
+      if (etag && etag === hashMd5 && sizeMatches) {
+        const entry: TranslationManifest = {
+          hash: hashSha256,
+          size: buffer.byteLength,
+          updatedAt: metadata.lastModified
+            ? new Date(metadata.lastModified).toISOString()
+            : new Date().toISOString(),
+        };
+
+        const remoteChanged =
+          !remoteEntry ||
+          remoteEntry.hash !== entry.hash ||
+          remoteEntry.size !== entry.size;
+        const localChanged =
+          !localEntry ||
+          localEntry.hash !== entry.hash ||
+          localEntry.size !== entry.size;
+
+        remoteManifest[translation] = entry;
+        localManifest[translation] = entry;
+
+        const tagPreview = etag.slice(0, 8);
+        console.log(
+          `Blob translation ${translation} already present remotely (etag ${tagPreview}). Skipping upload.`,
+        );
+
+        return {
+          remoteManifestChanged: remoteChanged,
+          localManifestChanged: localChanged,
+        };
+      }
+
+      console.log(
+        `Blob translation ${translation} exists remotely but content differs. Re-uploading.`,
+      );
+    }
   }
 
   await putBlobObject({
@@ -352,18 +509,34 @@ async function syncTranslationFileToBlob({
     `Uploaded translation ${translation} to Blob storage (${formatBytes(buffer.byteLength)}).`,
   );
 
-  manifest[translation] = {
-    hash,
+  const entry: TranslationManifest = {
+    hash: hashSha256,
     size: buffer.byteLength,
     updatedAt: new Date().toISOString(),
   };
 
-  return true;
+  remoteManifest[translation] = entry;
+  localManifest[translation] = entry;
+
+  return {
+    remoteManifestChanged: true,
+    localManifestChanged:
+      !localEntry ||
+      localEntry.hash !== entry.hash ||
+      localEntry.size !== entry.size,
+  };
 }
 
 type FetchBlobOptions = {
   method: "GET" | "HEAD";
   cacheBust?: boolean;
+};
+
+type BlobMetadata = {
+  exists: boolean;
+  etag?: string;
+  contentLength?: number;
+  lastModified?: string;
 };
 
 async function fetchBlob(
@@ -378,6 +551,7 @@ async function fetchBlob(
 
   const headers: Record<string, string> = {};
   if (token) {
+    url.searchParams.set("token", token);
     headers.Authorization = `Bearer ${token}`;
   }
 
@@ -386,6 +560,38 @@ async function fetchBlob(
     headers,
     cache: "no-store",
   });
+}
+
+async function getBlobMetadata(
+  key: string,
+  token: string,
+): Promise<BlobMetadata> {
+  const response = await fetchBlob(key, token, {
+    method: "HEAD",
+    cacheBust: true,
+  });
+
+  if (response.status === 404) {
+    return { exists: false };
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Unable to inspect Blob object ${key}: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const etag = normalizeEtag(response.headers.get("etag"));
+  const lengthHeader = response.headers.get("content-length");
+  const contentLength = lengthHeader ? Number.parseInt(lengthHeader, 10) : NaN;
+  const lastModified = response.headers.get("last-modified") ?? undefined;
+
+  return {
+    exists: true,
+    etag,
+    contentLength: Number.isNaN(contentLength) ? undefined : contentLength,
+    lastModified,
+  };
 }
 
 type PutBlobOptions = {
@@ -449,6 +655,18 @@ function createSha256(buffer: Buffer): string {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
+function createMd5(buffer: Buffer): string {
+  return crypto.createHash("md5").update(buffer).digest("hex");
+}
+
+function normalizeEtag(raw: string | null): string | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  return raw.replace(/^W\//, "").replace(/"/g, "").toLowerCase();
+}
+
 function formatBytes(bytes: number): string {
   const units = ["B", "KB", "MB", "GB"];
   let value = bytes;
@@ -492,6 +710,31 @@ async function readBlobManifest(
     console.warn("Manifest JSON is invalid. Rebuilding.", error);
     return {};
   }
+}
+
+async function readLocalManifest(): Promise<BlobManifest> {
+  try {
+    const raw = await fs.readFile(LOCAL_MANIFEST_PATH, "utf8");
+    const parsed = JSON.parse(raw) as BlobManifest;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+      return {};
+    }
+
+    console.warn(
+      `Unable to read local manifest at ${LOCAL_MANIFEST_PATH}.`,
+      error,
+    );
+    return {};
+  }
+}
+
+async function writeLocalManifest(manifest: BlobManifest): Promise<void> {
+  const dir = path.dirname(LOCAL_MANIFEST_PATH);
+  await fs.mkdir(dir, { recursive: true });
+  const data = JSON.stringify(manifest, null, 2);
+  await fs.writeFile(LOCAL_MANIFEST_PATH, `${data}\n`, "utf8");
 }
 
 async function loadEnvFromLocalFile(): Promise<void> {

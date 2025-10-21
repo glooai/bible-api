@@ -42,4 +42,5 @@ yarn-error.log*
 next-env.d.ts
 
 data/bible.sqlite
+data/translations-manifest.json
 scripts/load-test.md
