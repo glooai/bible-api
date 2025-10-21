@@ -8,12 +8,6 @@ import { searchBible } from "./index";
 type TranslationJson = Record<string, Record<string, Record<string, string>>>;
 
 const translationCache = new Map<string, Promise<TranslationJson>>();
-const translationsDir = path.join(
-  process.cwd(),
-  "lib",
-  "bible",
-  "translations",
-);
 
 beforeEach(() => {
   translationCache.clear();
