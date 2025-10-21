@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { type Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -21,6 +20,14 @@ type VerseRow = {
   embedding: Float32Array;
 };
 
+type TranslationTextRow = {
+  translation: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  text: string;
+};
+
 type ScriptOptions = {
   translation: string;
   dimension: number;
@@ -32,24 +39,6 @@ type SqlDatabase = InstanceType<SqlJs["Database"]>;
 
 const DEFAULT_TRANSLATION = "NLT";
 const DEFAULT_DIMENSION = 384;
-const DEFAULT_BLOB_ENDPOINT = "https://blob.vercel-storage.com";
-const DEFAULT_BLOB_PREFIX = "translations";
-const LOCAL_MANIFEST_PATH = path.join(
-  __dirname,
-  "..",
-  "data",
-  "translations-manifest.json",
-);
-
-type PublicManifestConfig = {
-  manifestKey: string;
-  manifestPublicUrl?: string;
-  translationUrlFactory?: (translation: string) => string;
-};
-
-let cachedPublicManifestConfig:
-  | { prefix: string; config: PublicManifestConfig }
-  | undefined;
 
 async function main() {
   await loadEnvFromLocalFile();
@@ -88,12 +77,14 @@ async function main() {
 
   console.log(`Loaded ${verses.length.toLocaleString()} verses. Inserting...`);
   insertVerses(db, verses);
+
+  console.log("Persisting translation texts to SQLite...");
+  await populateTranslationTexts(db, options.translation, translationJson);
+
   recordMetadata(db, options);
 
   await writeDatabase(db, options.translation);
   console.log("Done!");
-
-  await syncTranslationsWithBlob();
 }
 
 function projectRoot() {
@@ -230,158 +221,6 @@ function hashToken(token: string, dimension: number): number {
   return hash % dimension;
 }
 
-async function syncTranslationsWithBlob(): Promise<void> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
-    console.warn(
-      "BLOB_READ_WRITE_TOKEN is not set; skipping translation Blob sync.",
-    );
-    return;
-  }
-
-  const translationsDir = path.join(
-    projectRoot(),
-    "lib",
-    "bible",
-    "translations",
-  );
-  const prefix = blobPrefix();
-  const publicConfig = resolvePublicManifestConfig(prefix);
-  const manifestKey = publicConfig.manifestKey;
-  const manifest = await readBlobManifest(manifestKey, token);
-  const localManifest = await readLocalManifest();
-  let manifestDirty = false;
-  let localManifestDirty = false;
-  let quotaExceeded = false;
-  const forceUpload = process.env.FORCE_BLOB_UPLOAD === "true";
-
-  console.log(
-    `Loaded manifest with ${Object.keys(manifest).length} entries from ${manifestKey}.`,
-  );
-
-  if (Object.keys(localManifest).length > 0) {
-    console.log(
-      `Loaded local manifest cache with ${Object.keys(localManifest).length} entries from ${path.relative(projectRoot(), LOCAL_MANIFEST_PATH)}.`,
-    );
-  }
-  if (forceUpload) {
-    console.log(
-      "FORCE_BLOB_UPLOAD is enabled; all translations will be re-uploaded.",
-    );
-  }
-
-  let entries: Dirent[];
-  try {
-    entries = await fs.readdir(translationsDir, { withFileTypes: true });
-  } catch (error) {
-    console.warn(
-      `Unable to enumerate translations directory at ${translationsDir}.`,
-      error,
-    );
-    return;
-  }
-
-  for (const entry of entries) {
-    if (quotaExceeded) {
-      break;
-    }
-
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    const translation = entry.name.toUpperCase();
-    const filePath = path.join(
-      translationsDir,
-      entry.name,
-      `${translation}_bible.json`,
-    );
-
-    if (!(await fileExists(filePath))) {
-      continue;
-    }
-
-    try {
-      const { remoteManifestChanged, localManifestChanged } =
-        await syncTranslationFileToBlob({
-          translation,
-          filePath,
-          token,
-          prefix,
-          publicConfig,
-          remoteManifest: manifest,
-          localManifest,
-          forceUpload,
-        });
-      if (remoteManifestChanged) {
-        manifestDirty = true;
-      }
-      if (localManifestChanged) {
-        localManifestDirty = true;
-      }
-    } catch (error) {
-      console.warn(
-        `Failed to upload ${translation} translation to Blob storage.`,
-        error,
-      );
-
-      if (isQuotaExceededError(error)) {
-        quotaExceeded = true;
-        console.warn(
-          "Blob storage quota exceeded. Skipping remaining translation uploads.",
-        );
-      }
-    }
-  }
-
-  if (manifestDirty) {
-    try {
-      await putBlobObject({
-        key: manifestKey,
-        body: encodeJson(manifest),
-        token,
-        contentType: "application/json",
-      });
-      console.log(
-        `Updated translation manifest at ${manifestKey} (${Object.keys(manifest).length} entries).`,
-      );
-    } catch (error) {
-      console.warn(
-        "Failed to update translation manifest in Blob storage.",
-        error,
-      );
-    }
-  }
-
-  if (localManifestDirty) {
-    try {
-      await writeLocalManifest(localManifest);
-      console.log(
-        `Updated local manifest cache at ${path.relative(projectRoot(), LOCAL_MANIFEST_PATH)}.`,
-      );
-    } catch (error) {
-      console.warn("Failed to update local manifest cache.", error);
-    }
-  }
-}
-
-function isQuotaExceededError(error: unknown): boolean {
-  if (error instanceof Error) {
-    const message = `${error.message}${
-      typeof error.cause === "object" && error.cause !== null
-        ? ` ${(error.cause as Error).message ?? ""}`
-        : ""
-    }`;
-    return message.includes("Storage quota exceeded");
-  }
-
-  if (typeof error === "string") {
-    return error.includes("Storage quota exceeded");
-  }
-
-  return false;
-}
-
 async function fileExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
@@ -389,516 +228,6 @@ async function fileExists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-type SyncTranslationOptions = {
-  translation: string;
-  filePath: string;
-  token: string;
-  prefix: string;
-  remoteManifest: BlobManifest;
-  localManifest: BlobManifest;
-  forceUpload: boolean;
-  publicConfig: PublicManifestConfig;
-};
-
-type SyncTranslationResult = {
-  remoteManifestChanged: boolean;
-  localManifestChanged: boolean;
-};
-
-async function syncTranslationFileToBlob({
-  translation,
-  filePath,
-  token,
-  prefix,
-  remoteManifest,
-  localManifest,
-  forceUpload,
-  publicConfig,
-}: SyncTranslationOptions): Promise<SyncTranslationResult> {
-  const buffer = await fs.readFile(filePath);
-  const hashSha256 = createSha256(buffer);
-  const hashMd5 = createMd5(buffer);
-  const translationKey = `${prefix}/${translation}/${translation}_bible.json`;
-
-  const remoteEntry = remoteManifest[translation];
-  const localEntry = localManifest[translation];
-  const derivedPublicUrl = resolvePublicTranslationUrl(
-    translation,
-    publicConfig,
-  );
-
-  if (
-    !forceUpload &&
-    localEntry?.hash === hashSha256 &&
-    remoteEntry?.hash === hashSha256 &&
-    remoteEntry.size === buffer.byteLength
-  ) {
-    const publicUrl = derivedPublicUrl ?? localEntry.url ?? remoteEntry.url;
-    const shouldUpdateLocal =
-      typeof publicUrl === "string" && localEntry.url !== publicUrl;
-    const shouldUpdateRemote =
-      typeof publicUrl === "string" && remoteEntry.url !== publicUrl;
-    const nextLocal: TranslationManifest =
-      shouldUpdateLocal && typeof publicUrl === "string"
-        ? { ...localEntry, url: publicUrl }
-        : localEntry;
-    const nextRemote: TranslationManifest =
-      shouldUpdateRemote && typeof publicUrl === "string"
-        ? { ...remoteEntry, url: publicUrl }
-        : remoteEntry;
-
-    remoteManifest[translation] = nextRemote;
-    localManifest[translation] = nextLocal;
-
-    console.log(
-      `Translation ${translation} matches existing Blob object (hash ${hashSha256.slice(0, 8)}). Skipping upload.`,
-    );
-
-    return {
-      remoteManifestChanged: shouldUpdateRemote,
-      localManifestChanged: shouldUpdateLocal,
-    };
-  }
-
-  if (!forceUpload && remoteEntry?.hash === hashSha256) {
-    const publicUrl = derivedPublicUrl ?? localEntry?.url ?? remoteEntry.url;
-    const shouldUpdateRemote =
-      typeof publicUrl === "string" && remoteEntry.url !== publicUrl;
-    const nextRemote: TranslationManifest =
-      shouldUpdateRemote && typeof publicUrl === "string"
-        ? { ...remoteEntry, url: publicUrl }
-        : remoteEntry;
-
-    remoteManifest[translation] = nextRemote;
-
-    const shouldUpdateLocal =
-      !localEntry ||
-      localEntry.hash !== hashSha256 ||
-      (typeof publicUrl === "string" && localEntry.url !== publicUrl);
-
-    if (shouldUpdateLocal) {
-      localManifest[translation] = nextRemote;
-    }
-
-    console.log(
-      `Blob translation ${translation} is up to date (hash ${hashSha256.slice(0, 8)}).`,
-    );
-
-    return {
-      remoteManifestChanged: shouldUpdateRemote,
-      localManifestChanged: shouldUpdateLocal,
-    };
-  }
-
-  let metadata: BlobMetadata | null = null;
-
-  if (!forceUpload) {
-    try {
-      metadata = await getBlobMetadata(translationKey, token);
-    } catch (error) {
-      console.warn(
-        `Unable to inspect remote translation ${translation}. Proceeding with upload.`,
-        error,
-      );
-    }
-
-    if (metadata?.exists) {
-      const etag = metadata.etag;
-      const sizeMatches =
-        typeof metadata.contentLength !== "number" ||
-        metadata.contentLength === buffer.byteLength;
-
-      if (etag && etag === hashMd5 && sizeMatches) {
-        const publicUrl =
-          derivedPublicUrl ?? localEntry?.url ?? remoteEntry?.url;
-        const fallbackUpdatedAt =
-          remoteEntry?.updatedAt ??
-          localEntry?.updatedAt ??
-          new Date().toISOString();
-        const entry: TranslationManifest = {
-          hash: hashSha256,
-          size: buffer.byteLength,
-          updatedAt: metadata.lastModified
-            ? new Date(metadata.lastModified).toISOString()
-            : fallbackUpdatedAt,
-          ...(typeof publicUrl === "string" ? { url: publicUrl } : {}),
-        };
-
-        const remoteChanged =
-          !remoteEntry ||
-          remoteEntry.hash !== entry.hash ||
-          remoteEntry.size !== entry.size ||
-          remoteEntry.url !== entry.url;
-        const localChanged =
-          !localEntry ||
-          localEntry.hash !== entry.hash ||
-          localEntry.size !== entry.size ||
-          localEntry.url !== entry.url;
-
-        remoteManifest[translation] = entry;
-        localManifest[translation] = entry;
-
-        const tagPreview = etag.slice(0, 8);
-        console.log(
-          `Blob translation ${translation} already present remotely (etag ${tagPreview}). Skipping upload.`,
-        );
-
-        return {
-          remoteManifestChanged: remoteChanged,
-          localManifestChanged: localChanged,
-        };
-      }
-
-      console.log(
-        `Blob translation ${translation} exists remotely but content differs. Re-uploading.`,
-      );
-    }
-  }
-
-  await putBlobObject({
-    key: translationKey,
-    body: buffer as Uint8Array,
-    token,
-    contentType: "application/json",
-  });
-
-  console.log(
-    `Uploaded translation ${translation} to Blob storage (${formatBytes(buffer.byteLength)}).`,
-  );
-
-  const publicUrl = derivedPublicUrl ?? localEntry?.url ?? remoteEntry?.url;
-  const entry: TranslationManifest = {
-    hash: hashSha256,
-    size: buffer.byteLength,
-    updatedAt: new Date().toISOString(),
-    ...(typeof publicUrl === "string" ? { url: publicUrl } : {}),
-  };
-
-  remoteManifest[translation] = entry;
-  localManifest[translation] = entry;
-
-  return {
-    remoteManifestChanged: true,
-    localManifestChanged:
-      !localEntry ||
-      localEntry.hash !== entry.hash ||
-      localEntry.size !== entry.size ||
-      localEntry.url !== entry.url,
-  };
-}
-
-type FetchBlobOptions = {
-  method: "GET" | "HEAD";
-  cacheBust?: boolean;
-};
-
-type BlobMetadata = {
-  exists: boolean;
-  etag?: string;
-  contentLength?: number;
-  lastModified?: string;
-};
-
-async function fetchBlob(
-  key: string,
-  token: string,
-  options: FetchBlobOptions,
-): Promise<Response> {
-  const url = new URL(`${blobEndpoint()}/${key}`);
-  if (options.cacheBust) {
-    url.searchParams.set("_", Date.now().toString(36));
-  }
-
-  const headers: Record<string, string> = {};
-  if (token) {
-    url.searchParams.set("token", token);
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  return fetch(url.toString(), {
-    method: options.method,
-    headers,
-    cache: "no-store",
-  });
-}
-
-async function getBlobMetadata(
-  key: string,
-  token: string,
-): Promise<BlobMetadata> {
-  const response = await fetchBlob(key, token, {
-    method: "HEAD",
-    cacheBust: true,
-  });
-
-  if (response.status === 404) {
-    return { exists: false };
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Unable to inspect Blob object ${key}: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const etag = normalizeEtag(response.headers.get("etag"));
-  const lengthHeader = response.headers.get("content-length");
-  const contentLength = lengthHeader ? Number.parseInt(lengthHeader, 10) : NaN;
-  const lastModified = response.headers.get("last-modified") ?? undefined;
-
-  return {
-    exists: true,
-    etag,
-    contentLength: Number.isNaN(contentLength) ? undefined : contentLength,
-    lastModified,
-  };
-}
-
-type PutBlobOptions = {
-  key: string;
-  body: Uint8Array;
-  token: string;
-  contentType: string;
-};
-
-async function putBlobObject({
-  key,
-  body,
-  token,
-  contentType,
-}: PutBlobOptions): Promise<void> {
-  const bodyBytes = new Uint8Array(body);
-  const blob = new Blob([bodyBytes]);
-  const headers: Record<string, string> = {
-    "Content-Type": contentType,
-    "Content-Length": body.byteLength.toString(),
-    Authorization: `Bearer ${token}`,
-  };
-
-  const response = await fetch(`${blobEndpoint()}/${key}`, {
-    method: "PUT",
-    headers,
-    body: blob as unknown as RequestInit["body"],
-  });
-
-  if (!response.ok) {
-    let detail = "";
-    try {
-      detail = await response.text();
-    } catch {
-      detail = "";
-    }
-
-    throw new Error(
-      `Failed to upload ${key} to Blob storage: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`,
-    );
-  }
-}
-
-function blobEndpoint(): string {
-  return DEFAULT_BLOB_ENDPOINT;
-}
-
-function blobPrefix(): string {
-  return DEFAULT_BLOB_PREFIX;
-}
-
-function resolvePublicManifestConfig(prefix: string): PublicManifestConfig {
-  if (
-    cachedPublicManifestConfig &&
-    cachedPublicManifestConfig.prefix === prefix
-  ) {
-    return cachedPublicManifestConfig.config;
-  }
-
-  const fallback: PublicManifestConfig = {
-    manifestKey: `${prefix}/manifest.json`,
-  };
-
-  const raw = process.env.TRANSLATIONS_PUBLIC_BASE_URL;
-  if (typeof raw !== "string") {
-    cachedPublicManifestConfig = { prefix, config: fallback };
-    return fallback;
-  }
-
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    cachedPublicManifestConfig = { prefix, config: fallback };
-    return fallback;
-  }
-
-  if (trimmed.includes("{translation}")) {
-    const config: PublicManifestConfig = {
-      manifestKey: `${prefix}/manifest.json`,
-      translationUrlFactory: (translation: string) =>
-        trimmed.replaceAll("{translation}", translation),
-    };
-    cachedPublicManifestConfig = { prefix, config };
-    return config;
-  }
-
-  const isAbsoluteUrl = /^https?:\/\//i.test(trimmed);
-  if (isAbsoluteUrl) {
-    try {
-      const url = new URL(trimmed);
-      const pathname = url.pathname.replace(/^\/+/, "");
-      if (pathname.endsWith(".json")) {
-        const directorySegments = pathname.split("/");
-        directorySegments.pop();
-        const directoryPath = directorySegments.join("/");
-        const baseUrl =
-          directoryPath.length > 0
-            ? `${url.origin}/${directoryPath}`
-            : url.origin;
-        const normalizedBase = baseUrl.replace(/\/$/, "");
-        const config: PublicManifestConfig = {
-          manifestKey: pathname,
-          manifestPublicUrl: url.toString(),
-          translationUrlFactory: (translation: string) =>
-            `${normalizedBase}/${translation}/${translation}_bible.json`,
-        };
-        cachedPublicManifestConfig = { prefix, config };
-        return config;
-      }
-
-      const normalizedBase = url.toString().replace(/\/$/, "");
-      const config: PublicManifestConfig = {
-        manifestKey: `${prefix}/manifest.json`,
-        translationUrlFactory: (translation: string) =>
-          `${normalizedBase}/${translation}/${translation}_bible.json`,
-      };
-      cachedPublicManifestConfig = { prefix, config };
-      return config;
-    } catch {
-      // Fall through to fallback handling.
-    }
-  }
-
-  if (trimmed.endsWith(".json")) {
-    const normalizedPath = trimmed.replace(/^\/+/, "");
-    const config: PublicManifestConfig = {
-      manifestKey: normalizedPath,
-    };
-    cachedPublicManifestConfig = { prefix, config };
-    return config;
-  }
-
-  const normalizedBase = trimmed.replace(/\/$/, "");
-  const config: PublicManifestConfig = {
-    manifestKey: `${prefix}/manifest.json`,
-    translationUrlFactory: (translation: string) =>
-      `${normalizedBase}/${translation}/${translation}_bible.json`,
-  };
-  cachedPublicManifestConfig = { prefix, config };
-  return config;
-}
-
-function resolvePublicTranslationUrl(
-  translation: string,
-  config?: PublicManifestConfig,
-): string | null {
-  const effectiveConfig = config ?? resolvePublicManifestConfig(blobPrefix());
-  if (!effectiveConfig.translationUrlFactory) {
-    return null;
-  }
-  return effectiveConfig.translationUrlFactory(translation);
-}
-
-type TranslationManifest = {
-  hash: string;
-  size: number;
-  updatedAt: string;
-  url?: string;
-};
-
-type BlobManifest = Record<string, TranslationManifest>;
-
-function createSha256(buffer: Buffer): string {
-  return crypto.createHash("sha256").update(buffer).digest("hex");
-}
-
-function createMd5(buffer: Buffer): string {
-  return crypto.createHash("md5").update(buffer).digest("hex");
-}
-
-function normalizeEtag(raw: string | null): string | undefined {
-  if (!raw) {
-    return undefined;
-  }
-
-  return raw.replace(/^W\//, "").replace(/"/g, "").toLowerCase();
-}
-
-function formatBytes(bytes: number): string {
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let index = 0;
-
-  while (value >= 1024 && index < units.length - 1) {
-    value /= 1024;
-    index += 1;
-  }
-
-  return `${value.toFixed(value < 10 && index > 0 ? 1 : 0)} ${units[index]}`;
-}
-
-function encodeJson(value: unknown): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(value));
-}
-
-async function readBlobManifest(
-  key: string,
-  token: string,
-): Promise<BlobManifest> {
-  const response = await fetchBlob(key, token, {
-    method: "GET",
-    cacheBust: true,
-  });
-  if (response.status === 404) {
-    return {};
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Unable to read translation manifest at ${key}: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const text = await response.text();
-  try {
-    const parsed = JSON.parse(text) as BlobManifest;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (error) {
-    console.warn("Manifest JSON is invalid. Rebuilding.", error);
-    return {};
-  }
-}
-
-async function readLocalManifest(): Promise<BlobManifest> {
-  try {
-    const raw = await fs.readFile(LOCAL_MANIFEST_PATH, "utf8");
-    const parsed = JSON.parse(raw) as BlobManifest;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
-      return {};
-    }
-
-    console.warn(
-      `Unable to read local manifest at ${LOCAL_MANIFEST_PATH}.`,
-      error,
-    );
-    return {};
-  }
-}
-
-async function writeLocalManifest(manifest: BlobManifest): Promise<void> {
-  const dir = path.dirname(LOCAL_MANIFEST_PATH);
-  await fs.mkdir(dir, { recursive: true });
-  const data = JSON.stringify(manifest, null, 2);
-  await fs.writeFile(LOCAL_MANIFEST_PATH, `${data}\n`, "utf8");
 }
 
 async function loadEnvFromLocalFile(): Promise<void> {
@@ -944,6 +273,142 @@ async function loadEnvFromLocalFile(): Promise<void> {
   }
 }
 
+async function populateTranslationTexts(
+  db: SqlDatabase,
+  primaryTranslation: string,
+  primaryTranslationJson: TranslationJson,
+): Promise<void> {
+  insertTranslationTextRows(
+    db,
+    buildTranslationTextRows(primaryTranslation, primaryTranslationJson),
+  );
+
+  const translationsDir = path.join(
+    projectRoot(),
+    "lib",
+    "bible",
+    "translations",
+  );
+
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(translationsDir, { withFileTypes: true });
+  } catch (error) {
+    console.warn(
+      `Unable to enumerate translations directory at ${translationsDir}.`,
+      error,
+    );
+    return;
+  }
+
+  const seen = new Set<string>([primaryTranslation.toUpperCase()]);
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const translation = entry.name.toUpperCase();
+    if (seen.has(translation)) {
+      continue;
+    }
+
+    const filePath = path.join(
+      translationsDir,
+      entry.name,
+      `${translation}_bible.json`,
+    );
+
+    if (!(await fileExists(filePath))) {
+      continue;
+    }
+
+    try {
+      const json = await loadTranslation(filePath);
+      insertTranslationTextRows(
+        db,
+        buildTranslationTextRows(translation, json),
+      );
+      seen.add(translation);
+      console.log(
+        `Stored translation ${translation} in SQLite (${Object.keys(json).length} books).`,
+      );
+    } catch (error) {
+      console.warn(
+        `Failed to store translation ${translation} in SQLite.`,
+        error,
+      );
+    }
+  }
+}
+
+function buildTranslationTextRows(
+  translation: string,
+  translationJson: TranslationJson,
+): TranslationTextRow[] {
+  const rows: TranslationTextRow[] = [];
+
+  for (const [book, chapters] of Object.entries(translationJson)) {
+    for (const [chapterKey, verses] of Object.entries(chapters)) {
+      const chapter = Number.parseInt(chapterKey, 10);
+      if (!Number.isFinite(chapter)) {
+        continue;
+      }
+
+      for (const [verseKey, text] of Object.entries(verses)) {
+        const verse = Number.parseInt(verseKey, 10);
+        if (!Number.isFinite(verse) || typeof text !== "string") {
+          continue;
+        }
+
+        rows.push({
+          translation,
+          book,
+          chapter,
+          verse,
+          text,
+        });
+      }
+    }
+  }
+
+  return rows;
+}
+
+function insertTranslationTextRows(
+  db: SqlDatabase,
+  rows: TranslationTextRow[],
+): void {
+  if (rows.length === 0) {
+    return;
+  }
+
+  const statement = db.prepare(`
+    INSERT OR REPLACE INTO translation_texts
+    (translation, book, chapter, verse, text)
+    VALUES (?, ?, ?, ?, ?);
+  `);
+
+  try {
+    db.run("BEGIN TRANSACTION;");
+    for (const row of rows) {
+      statement.run([
+        row.translation,
+        row.book,
+        row.chapter,
+        row.verse,
+        row.text,
+      ]);
+    }
+    db.run("COMMIT;");
+  } catch (error) {
+    db.run("ROLLBACK;");
+    throw error;
+  } finally {
+    statement.free();
+  }
+}
+
 function ensureSchema(db: SqlDatabase) {
   db.run(`
     CREATE TABLE IF NOT EXISTS verses (
@@ -953,6 +418,17 @@ function ensureSchema(db: SqlDatabase) {
       verse INTEGER NOT NULL,
       text TEXT NOT NULL,
       embedding BLOB NOT NULL,
+      PRIMARY KEY (translation, book, chapter, verse)
+    );
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS translation_texts (
+      translation TEXT NOT NULL,
+      book TEXT NOT NULL,
+      chapter INTEGER NOT NULL,
+      verse INTEGER NOT NULL,
+      text TEXT NOT NULL,
       PRIMARY KEY (translation, book, chapter, verse)
     );
   `);

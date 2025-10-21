@@ -13,8 +13,6 @@ const PROJECT_ROOT = process.cwd();
 const DATABASE_PATH = path.join(PROJECT_ROOT, "data", "bible.sqlite");
 const SQL_WASM_FILENAME = "sql-wasm.wasm";
 const SQL_JS_WASM_ENV_KEY = "SQL_JS_WASM_PATH";
-const DEFAULT_BLOB_ENDPOINT = "https://blob.vercel-storage.com";
-const DEFAULT_BLOB_PREFIX = "translations";
 
 type TranslationJson = Record<string, Record<string, Record<string, string>>>;
 
@@ -58,6 +56,7 @@ export type BibleSearchResult = {
 
 let sqlModulePromise: Promise<SqlJs> | undefined;
 let corpusPromise: Promise<CorpusData> | undefined;
+let databasePromise: Promise<SqlDatabase> | undefined;
 const translationCache = new Map<string, Promise<TranslationJson>>();
 
 export async function searchBible({
@@ -152,9 +151,9 @@ async function loadSqlModule(): Promise<SqlJs> {
   return sqlModulePromise;
 }
 
-async function loadCorpus(): Promise<CorpusData> {
-  if (!corpusPromise) {
-    corpusPromise = (async () => {
+async function loadDatabase(): Promise<SqlDatabase> {
+  if (!databasePromise) {
+    databasePromise = (async () => {
       const sql = await loadSqlModule();
       let fileBuffer: Uint8Array;
 
@@ -168,32 +167,36 @@ async function loadCorpus(): Promise<CorpusData> {
         );
       }
 
-      const db = new sql.Database(fileBuffer);
+      return new sql.Database(fileBuffer);
+    })();
+  }
 
-      try {
-        const translation =
-          readMetadata(db, "translation") ?? DEFAULT_TRANSLATION;
-        const rawDimension = readMetadata(db, "embedding_dimension");
-        const dimension = rawDimension
-          ? Number.parseInt(rawDimension, 10)
-          : NaN;
-        if (!Number.isFinite(dimension) || dimension <= 0) {
-          throw new Error(
-            "Invalid or missing embedding dimension metadata in Bible database.",
-          );
-        }
+  return databasePromise;
+}
 
-        const verses = loadVerses(db, translation);
-        if (verses.length === 0) {
-          throw new Error(
-            `No verses found in the Bible database for translation ${translation}.`,
-          );
-        }
+async function loadCorpus(): Promise<CorpusData> {
+  if (!corpusPromise) {
+    corpusPromise = (async () => {
+      const db = await loadDatabase();
 
-        return { translation, dimension, verses };
-      } finally {
-        db.close();
+      const translation =
+        readMetadata(db, "translation") ?? DEFAULT_TRANSLATION;
+      const rawDimension = readMetadata(db, "embedding_dimension");
+      const dimension = rawDimension ? Number.parseInt(rawDimension, 10) : NaN;
+      if (!Number.isFinite(dimension) || dimension <= 0) {
+        throw new Error(
+          "Invalid or missing embedding dimension metadata in Bible database.",
+        );
       }
+
+      const verses = loadVerses(db, translation);
+      if (verses.length === 0) {
+        throw new Error(
+          `No verses found in the Bible database for translation ${translation}.`,
+        );
+      }
+
+      return { translation, dimension, verses };
     })();
   }
 
@@ -377,8 +380,64 @@ async function loadTranslationJson(
   let cached = translationCache.get(normalized);
   if (!cached) {
     cached = (async () => {
-      const blobConfig = resolveBlobConfig();
-      return loadTranslationFromBlob(normalized, blobConfig);
+      const db = await loadDatabase();
+      const statement = db.prepare(
+        `
+          SELECT book, chapter, verse, text
+          FROM translation_texts
+          WHERE translation = ?
+        `,
+      );
+
+      const result: TranslationJson = {};
+      let foundRow = false;
+
+      try {
+        statement.bind([normalized]);
+
+        while (statement.step()) {
+          const row = statement.get() as unknown[];
+          const book = row[0];
+          const chapter = row[1];
+          const verse = row[2];
+          const text = row[3];
+
+          if (
+            typeof book !== "string" ||
+            typeof chapter !== "number" ||
+            typeof verse !== "number" ||
+            typeof text !== "string"
+          ) {
+            continue;
+          }
+
+          foundRow = true;
+
+          const chapterKey = String(chapter);
+          const verseKey = String(verse);
+
+          if (!result[book]) {
+            result[book] = {};
+          }
+
+          if (!result[book]![chapterKey]) {
+            result[book]![chapterKey] = {};
+          }
+
+          result[book]![chapterKey]![verseKey] = text;
+        }
+      } finally {
+        statement.free();
+      }
+
+      if (!foundRow) {
+        throw new Error(
+          `Translation ${normalized} is not available in the Bible database. ` +
+            "Run `pnpm bible:ingest` to include it.",
+        );
+      }
+
+      return result;
     })();
 
     cached.catch(() => {
@@ -389,89 +448,6 @@ async function loadTranslationJson(
   }
 
   return cached;
-}
-
-type BlobConfig = {
-  baseUrl: string;
-  token: string;
-  prefix: string;
-};
-
-function resolveBlobConfig(): BlobConfig {
-  const token = resolveBlobToken();
-
-  if (!token) {
-    throw new Error(
-      "BLOB_READ_WRITE_TOKEN is not set. Unable to fetch translations from Vercel Blob.",
-    );
-  }
-
-  const baseUrl = DEFAULT_BLOB_ENDPOINT;
-  const prefix = DEFAULT_BLOB_PREFIX;
-
-  return {
-    baseUrl,
-    token,
-    prefix,
-  };
-}
-
-function resolveBlobToken(): string | null {
-  const value = process.env.BLOB_READ_WRITE_TOKEN;
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-async function loadTranslationFromBlob(
-  translation: string,
-  config: BlobConfig,
-): Promise<TranslationJson> {
-  const key = `${config.prefix}/${translation}/${translation}_bible.json`;
-  const url = new URL(`${config.baseUrl}/${key}`);
-  url.searchParams.set("token", config.token);
-
-  let response: Response;
-  try {
-    response = await fetch(url.toString(), {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-      },
-      cache: "no-store",
-    });
-  } catch (error) {
-    throw new Error(
-      `Unable to reach Blob storage for translation ${translation}.`,
-      { cause: error as Error },
-    );
-  }
-
-  if (response.status === 404) {
-    throw new Error(
-      `Translation ${translation} is not available in Vercel Blob storage at ${key}. ` +
-        "Run `pnpm bible:ingest` to upload it or verify the Blob prefix.",
-    );
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Blob storage returned ${response.status} ${response.statusText} for translation ${translation}.`,
-    );
-  }
-
-  const raw = await response.text();
-  try {
-    return JSON.parse(raw) as TranslationJson;
-  } catch (error) {
-    throw new Error(
-      `Blob translation payload for ${translation} is not valid JSON.`,
-      { cause: error as Error },
-    );
-  }
 }
 
 function lookupTranslationText(
