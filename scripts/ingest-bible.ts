@@ -357,6 +357,7 @@ async function syncTranslationFileToBlob({
 
 type FetchBlobOptions = {
   method: "GET" | "HEAD";
+  cacheBust?: boolean;
 };
 
 async function fetchBlob(
@@ -367,6 +368,9 @@ async function fetchBlob(
   const url = new URL(`${blobEndpoint()}/${key}`);
   if (token) {
     url.searchParams.set("token", token);
+  }
+  if (options.cacheBust) {
+    url.searchParams.set("_", Date.now().toString(36));
   }
 
   return fetch(url.toString(), {
@@ -458,7 +462,10 @@ async function readBlobManifest(
   key: string,
   token: string,
 ): Promise<BlobManifest> {
-  const response = await fetchBlob(key, token, { method: "GET" });
+  const response = await fetchBlob(key, token, {
+    method: "GET",
+    cacheBust: true,
+  });
   if (response.status === 404) {
     return {};
   }
