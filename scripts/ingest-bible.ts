@@ -1,3 +1,4 @@
+import { type Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -19,6 +20,14 @@ type VerseRow = {
   embedding: Float32Array;
 };
 
+type TranslationTextRow = {
+  translation: string;
+  book: string;
+  chapter: number;
+  verse: number;
+  text: string;
+};
+
 type ScriptOptions = {
   translation: string;
   dimension: number;
@@ -32,6 +41,8 @@ const DEFAULT_TRANSLATION = "NLT";
 const DEFAULT_DIMENSION = 384;
 
 async function main() {
+  await loadEnvFromLocalFile();
+
   const options = parseOptions(process.argv.slice(2), {
     translation: process.env.BIBLE_TRANSLATION ?? DEFAULT_TRANSLATION,
     dimension: parseDimension(process.env.EMBED_DIM) ?? DEFAULT_DIMENSION,
@@ -66,6 +77,10 @@ async function main() {
 
   console.log(`Loaded ${verses.length.toLocaleString()} verses. Inserting...`);
   insertVerses(db, verses);
+
+  console.log("Persisting translation texts to SQLite...");
+  await populateTranslationTexts(db, options.translation, translationJson);
+
   recordMetadata(db, options);
 
   await writeDatabase(db, options.translation);
@@ -206,6 +221,194 @@ function hashToken(token: string, dimension: number): number {
   return hash % dimension;
 }
 
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function loadEnvFromLocalFile(): Promise<void> {
+  const envPath = path.join(projectRoot(), ".env.local");
+  let content: string;
+
+  try {
+    content = await fs.readFile(envPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+      return;
+    }
+
+    console.warn(`Unable to load environment from ${envPath}.`, error);
+    return;
+  }
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const equalsIndex = line.indexOf("=");
+    if (equalsIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, equalsIndex).trim();
+    if (!key) {
+      continue;
+    }
+
+    let value = line.slice(equalsIndex + 1).trim();
+    const quoted = value.match(/^(['"])(.*)\1$/);
+    if (quoted) {
+      value = quoted[2];
+    }
+
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
+
+async function populateTranslationTexts(
+  db: SqlDatabase,
+  primaryTranslation: string,
+  primaryTranslationJson: TranslationJson,
+): Promise<void> {
+  insertTranslationTextRows(
+    db,
+    buildTranslationTextRows(primaryTranslation, primaryTranslationJson),
+  );
+
+  const translationsDir = path.join(
+    projectRoot(),
+    "lib",
+    "bible",
+    "translations",
+  );
+
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(translationsDir, { withFileTypes: true });
+  } catch (error) {
+    console.warn(
+      `Unable to enumerate translations directory at ${translationsDir}.`,
+      error,
+    );
+    return;
+  }
+
+  const seen = new Set<string>([primaryTranslation.toUpperCase()]);
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const translation = entry.name.toUpperCase();
+    if (seen.has(translation)) {
+      continue;
+    }
+
+    const filePath = path.join(
+      translationsDir,
+      entry.name,
+      `${translation}_bible.json`,
+    );
+
+    if (!(await fileExists(filePath))) {
+      continue;
+    }
+
+    try {
+      const json = await loadTranslation(filePath);
+      insertTranslationTextRows(
+        db,
+        buildTranslationTextRows(translation, json),
+      );
+      seen.add(translation);
+      console.log(
+        `Stored translation ${translation} in SQLite (${Object.keys(json).length} books).`,
+      );
+    } catch (error) {
+      console.warn(
+        `Failed to store translation ${translation} in SQLite.`,
+        error,
+      );
+    }
+  }
+}
+
+function buildTranslationTextRows(
+  translation: string,
+  translationJson: TranslationJson,
+): TranslationTextRow[] {
+  const rows: TranslationTextRow[] = [];
+
+  for (const [book, chapters] of Object.entries(translationJson)) {
+    for (const [chapterKey, verses] of Object.entries(chapters)) {
+      const chapter = Number.parseInt(chapterKey, 10);
+      if (!Number.isFinite(chapter)) {
+        continue;
+      }
+
+      for (const [verseKey, text] of Object.entries(verses)) {
+        const verse = Number.parseInt(verseKey, 10);
+        if (!Number.isFinite(verse) || typeof text !== "string") {
+          continue;
+        }
+
+        rows.push({
+          translation,
+          book,
+          chapter,
+          verse,
+          text,
+        });
+      }
+    }
+  }
+
+  return rows;
+}
+
+function insertTranslationTextRows(
+  db: SqlDatabase,
+  rows: TranslationTextRow[],
+): void {
+  if (rows.length === 0) {
+    return;
+  }
+
+  const statement = db.prepare(`
+    INSERT OR REPLACE INTO translation_texts
+    (translation, book, chapter, verse, text)
+    VALUES (?, ?, ?, ?, ?);
+  `);
+
+  try {
+    db.run("BEGIN TRANSACTION;");
+    for (const row of rows) {
+      statement.run([
+        row.translation,
+        row.book,
+        row.chapter,
+        row.verse,
+        row.text,
+      ]);
+    }
+    db.run("COMMIT;");
+  } catch (error) {
+    db.run("ROLLBACK;");
+    throw error;
+  } finally {
+    statement.free();
+  }
+}
+
 function ensureSchema(db: SqlDatabase) {
   db.run(`
     CREATE TABLE IF NOT EXISTS verses (
@@ -215,6 +418,17 @@ function ensureSchema(db: SqlDatabase) {
       verse INTEGER NOT NULL,
       text TEXT NOT NULL,
       embedding BLOB NOT NULL,
+      PRIMARY KEY (translation, book, chapter, verse)
+    );
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS translation_texts (
+      translation TEXT NOT NULL,
+      book TEXT NOT NULL,
+      chapter INTEGER NOT NULL,
+      verse INTEGER NOT NULL,
+      text TEXT NOT NULL,
       PRIMARY KEY (translation, book, chapter, verse)
     );
   `);

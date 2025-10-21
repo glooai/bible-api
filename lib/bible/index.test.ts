@@ -1,13 +1,21 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { searchBible } from "./index";
 
 type TranslationJson = Record<string, Record<string, Record<string, string>>>;
 
 const translationCache = new Map<string, Promise<TranslationJson>>();
+
+beforeEach(() => {
+  translationCache.clear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("searchBible", () => {
   it("returns NLT verses by default", async () => {

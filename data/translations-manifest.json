@@ -1,0 +1,176 @@
+{
+  "AKJV": {
+    "hash": "6dd3c37ef7b1dfaef8b0e485dca921e492ba07e8afe6058f78e5d4f32d77fff7",
+    "size": 4838516,
+    "updatedAt": "2025-10-21T16:37:54.795Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/AKJV/AKJV_bible.json"
+  },
+  "AMP": {
+    "hash": "964c77e55a0999517a9e86501f6226423db668ee0fcf882e5df20c51f6b36522",
+    "size": 5495703,
+    "updatedAt": "2025-10-21T16:37:55.692Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/AMP/AMP_bible.json"
+  },
+  "ASV": {
+    "hash": "a1bfbcf67b82e45829f33bd65f0ab059d75e80904fc947db6604d5beba7148f2",
+    "size": 4833389,
+    "updatedAt": "2025-10-21T16:37:57.128Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/ASV/ASV_bible.json"
+  },
+  "BRG": {
+    "hash": "6cdf3e7bc72d341c36bab05837ffcee1080cda567b4f990ac38c049d0fe42d3d",
+    "size": 4823549,
+    "updatedAt": "2025-10-21T16:37:58.052Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/BRG/BRG_bible.json"
+  },
+  "CSB": {
+    "hash": "545f2844ce8527be5c29b141f9aff0399dcf2a79a091623447f2e79ef2357987",
+    "size": 4660861,
+    "updatedAt": "2025-10-21T16:37:58.826Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/CSB/CSB_bible.json"
+  },
+  "EHV": {
+    "hash": "01bf1755555728ca07f4680549f37cbe57bfe40368830c1a4580d884ab8faffa",
+    "size": 4893709,
+    "updatedAt": "2025-10-21T16:37:59.561Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/EHV/EHV_bible.json"
+  },
+  "ESV": {
+    "hash": "3a811b340c81b492cbab939f62bbd5e2943a9643ca5f8916f6afe8c17662e343",
+    "size": 4747529,
+    "updatedAt": "2025-10-21T16:38:00.403Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/ESV/ESV_bible.json"
+  },
+  "ESVUK": {
+    "hash": "065ff0c866c5110b97f79b3a2e2abcb9534858af21b81ca633d2e113c9b38d35",
+    "size": 4749722,
+    "updatedAt": "2025-10-21T16:38:01.162Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/ESVUK/ESVUK_bible.json"
+  },
+  "GNV": {
+    "hash": "00e813156933a570dfe5feb0d5df5cbdaff0af5b75eb24833927a96f8d48502c",
+    "size": 4790006,
+    "updatedAt": "2025-10-21T16:38:01.920Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/GNV/GNV_bible.json"
+  },
+  "GW": {
+    "hash": "0ffbc6ac728009287c8ae7f2d0367513f85f84532548c4533d39a53dea248c6e",
+    "size": 4753271,
+    "updatedAt": "2025-10-21T16:38:02.682Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/GW/GW_bible.json"
+  },
+  "ISV": {
+    "hash": "4e6b946ff44a0db6842da95e5388b9d103b405be8805de0e94b593f7e8e7ce7b",
+    "size": 4993204,
+    "updatedAt": "2025-10-21T16:38:03.485Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/ISV/ISV_bible.json"
+  },
+  "JUB": {
+    "hash": "98f351c62e2c6c44aa4ef67c7cb9a11ca029f08aedc0f50555df34707db27fef",
+    "size": 4813429,
+    "updatedAt": "2025-10-21T16:38:04.316Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/JUB/JUB_bible.json"
+  },
+  "KJ21": {
+    "hash": "59b2ac831d7c9456ff60992e622e22162dbe322f4f6d2eff0ada71b183d8c659",
+    "size": 4915006,
+    "updatedAt": "2025-10-21T16:38:05.122Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/KJ21/KJ21_bible.json"
+  },
+  "KJV": {
+    "hash": "4593eb8475a07417d8e8c482292cd23c4430b50712ea3f72aa887c3db31a6074",
+    "size": 4812474,
+    "updatedAt": "2025-10-21T16:38:05.871Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/KJV/KJV_bible.json"
+  },
+  "LEB": {
+    "hash": "ee8c0701b4523d00223089c904a860bacc8c551976aedb537b5cf94388537bc6",
+    "size": 4909220,
+    "updatedAt": "2025-10-21T16:38:06.856Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/LEB/LEB_bible.json"
+  },
+  "MEV": {
+    "hash": "99ae9873e8a3fd27dca8b9295f3ec795ec496377120b1241eec24a9a3de9ad8e",
+    "size": 4793758,
+    "updatedAt": "2025-10-21T16:38:07.618Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/MEV/MEV_bible.json"
+  },
+  "NASB": {
+    "hash": "c9ed721b6f9ebcfe7016b64e28919112e22c6402829460f1990de8bd44c770e9",
+    "size": 4885679,
+    "updatedAt": "2025-10-21T16:38:08.359Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NASB/NASB_bible.json"
+  },
+  "NASB1995": {
+    "hash": "db1443a5563ced7fc2bb4b56b63bdb7c5b5d248d1b7aeac2ff33ae4ce2395513",
+    "size": 4839585,
+    "updatedAt": "2025-10-21T16:38:09.157Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NASB1995/NASB1995_bible.json"
+  },
+  "NET": {
+    "hash": "bae1086f56694cac6270c932bee3a1e6e04736557e87c7b0ef315a611e383f1d",
+    "size": 4811167,
+    "updatedAt": "2025-10-21T16:38:09.999Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NET/NET_bible.json"
+  },
+  "NIV": {
+    "hash": "295d325acab1e2247863eb1a5f1b246599ce31071e813baf6019398bbedb4ca9",
+    "size": 4697936,
+    "updatedAt": "2025-10-21T16:38:10.827Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NIV/NIV_bible.json"
+  },
+  "NIVUK": {
+    "hash": "4da9aab2dad88ff6b43d0f9d4dc158e12178ae12d9ecd577b0f3015e4a2e50ed",
+    "size": 4705194,
+    "updatedAt": "2025-10-21T16:38:11.591Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NIVUK/NIVUK_bible.json"
+  },
+  "NKJV": {
+    "hash": "5a393d5362b75ee046e45f81574ddfebcaf6300add09ea193aa6d5910df846af",
+    "size": 4822426,
+    "updatedAt": "2025-10-21T16:38:12.368Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NKJV/NKJV_bible.json"
+  },
+  "NLT": {
+    "hash": "9d4ff7bc64c8d7bb125bed7104b705e1a4abcc1c29ff5e6a7a14422f56bc08f4",
+    "size": 4883088,
+    "updatedAt": "2025-10-21T16:38:13.199Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NLT/NLT_bible.json"
+  },
+  "NLV": {
+    "hash": "138953acaca2426aa235c306847511de8d99c71ecd2baf03135ae5d04ed5f1a5",
+    "size": 4812468,
+    "updatedAt": "2025-10-21T16:38:14.029Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NLV/NLV_bible.json"
+  },
+  "NOG": {
+    "hash": "6847986e5c129298c0efb230ba7e8f15517054de500cb367a5fc7e930070ad6e",
+    "size": 4812248,
+    "updatedAt": "2025-10-21T16:38:14.844Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NOG/NOG_bible.json"
+  },
+  "NRSV": {
+    "hash": "e56e9f17d05833d2c3049c12e2e3d3c8f65728f2e90809de2f8f751e91bbbbcc",
+    "size": 4729213,
+    "updatedAt": "2025-10-21T16:38:15.663Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NRSV/NRSV_bible.json"
+  },
+  "NRSVUE": {
+    "hash": "e56e9f17d05833d2c3049c12e2e3d3c8f65728f2e90809de2f8f751e91bbbbcc",
+    "size": 4729213,
+    "updatedAt": "2025-10-21T16:38:16.614Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/NRSVUE/NRSVUE_bible.json"
+  },
+  "WEB": {
+    "hash": "2a25ffcd13719b02f8ae9346d9e6c7330debe478b5f58839afa5d6833da3279e",
+    "size": 4828202,
+    "updatedAt": "2025-10-21T16:38:17.363Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/WEB/WEB_bible.json"
+  },
+  "YLT": {
+    "hash": "180172eb12572d78263e1d12f5a1451a12d4e6d91ddfe218654f2dbdbad05e32",
+    "size": 4841502,
+    "updatedAt": "2025-10-21T16:38:18.220Z",
+    "url": "https://plueoltb6oum7pni.public.blob.vercel-storage.com/translations/YLT/YLT_bible.json"
+  }
+}
