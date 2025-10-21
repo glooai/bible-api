@@ -431,15 +431,17 @@ async function loadTranslationFromBlob(
   config: BlobConfig,
 ): Promise<TranslationJson> {
   const key = `${config.prefix}/${translation}/${translation}_bible.json`;
-  const url = `${config.baseUrl}/${key}`;
+  const url = new URL(`${config.baseUrl}/${key}`);
+  url.searchParams.set("token", config.token);
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetch(url.toString(), {
       method: "GET",
       headers: {
         Authorization: `Bearer ${config.token}`,
       },
+      cache: "no-store",
     });
   } catch (error) {
     throw new Error(
