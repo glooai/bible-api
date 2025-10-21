@@ -234,6 +234,10 @@ async function syncTranslationsWithBlob(): Promise<void> {
   const manifest = await readBlobManifest(manifestKey, token);
   let manifestDirty = false;
 
+  console.log(
+    `Loaded manifest with ${Object.keys(manifest).length} entries from ${manifestKey}.`,
+  );
+
   let entries: Dirent[];
   try {
     entries = await fs.readdir(translationsDir, { withFileTypes: true });
@@ -368,15 +372,19 @@ async function fetchBlob(
   options: FetchBlobOptions,
 ): Promise<Response> {
   const url = new URL(`${blobEndpoint()}/${key}`);
-  if (token) {
-    url.searchParams.set("token", token);
-  }
   if (options.cacheBust) {
     url.searchParams.set("_", Date.now().toString(36));
   }
 
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   return fetch(url.toString(), {
     method: options.method,
+    headers,
+    cache: "no-store",
   });
 }
 
