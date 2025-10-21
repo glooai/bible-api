@@ -17,6 +17,9 @@ importers:
       react-dom:
         specifier: 19.1.0
         version: 19.1.0(react@19.1.0)
+      sql.js:
+        specifier: ^1.10.2
+        version: 1.13.0
     devDependencies:
       '@eslint/eslintrc':
         specifier: ^3
@@ -48,9 +51,6 @@ importers:
       prettier:
         specifier: ^3.3.3
         version: 3.6.2
-      sql.js:
-        specifier: ^1.10.2
-        version: 1.13.0
       tailwindcss:
         specifier: ^4
         version: 4.1.15
