@@ -1,14 +1,18 @@
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 
 import initSqlJs from "sql.js";
+
+const require = createRequire(import.meta.url);
 
 const DEFAULT_TRANSLATION = "NLT";
 const DEFAULT_LIMIT = 5;
 const MAX_LIMIT = 50;
 const PROJECT_ROOT = process.cwd();
 const DATABASE_PATH = path.join(PROJECT_ROOT, "data", "bible.sqlite");
-const SQL_DIST_PATH = path.join(PROJECT_ROOT, "node_modules", "sql.js", "dist");
+const SQL_WASM_FILENAME = "sql-wasm.wasm";
+const SQL_JS_WASM_ENV_KEY = "SQL_JS_WASM_PATH";
 
 type TranslationJson = Record<string, Record<string, Record<string, string>>>;
 
@@ -138,9 +142,10 @@ function normalizeTranslation(value?: string): string {
 
 async function loadSqlModule(): Promise<SqlJs> {
   if (!sqlModulePromise) {
-    sqlModulePromise = initSqlJs({
-      locateFile: (file) => path.join(SQL_DIST_PATH, file),
-    });
+    sqlModulePromise = (async () => {
+      const wasmBinary = await loadSqlWasmBinary();
+      return initSqlJs({ wasmBinary });
+    })();
   }
   return sqlModulePromise;
 }
@@ -191,6 +196,87 @@ async function loadCorpus(): Promise<CorpusData> {
   }
 
   return corpusPromise;
+}
+
+let wasmBinaryPromise: Promise<Uint8Array> | undefined;
+
+async function loadSqlWasmBinary(): Promise<Uint8Array> {
+  if (!wasmBinaryPromise) {
+    wasmBinaryPromise = (async () => {
+      const candidates = resolveSqlWasmCandidates();
+
+      const tried: string[] = [];
+      for (const candidate of candidates) {
+        try {
+          return await fs.readFile(candidate);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+            tried.push(candidate);
+            continue;
+          }
+
+          throw new Error(
+            `Unable to read SQL.js WASM binary at ${candidate}.`,
+            { cause: error as Error },
+          );
+        }
+      }
+
+      throw new Error(
+        [
+          "Unable to locate SQL.js WASM binary.",
+          `Looked in: ${tried.join(", ") || "none"}.`,
+          "Set SQL_JS_WASM_PATH to an absolute path if the binary lives elsewhere.",
+        ].join(" "),
+      );
+    })();
+  }
+
+  return wasmBinaryPromise;
+}
+
+function resolveSqlWasmCandidates(): string[] {
+  const candidates = new Set<string>();
+
+  if (process.env[SQL_JS_WASM_ENV_KEY]) {
+    const candidate = process.env[SQL_JS_WASM_ENV_KEY]!;
+    candidates.add(
+      path.isAbsolute(candidate)
+        ? candidate
+        : path.join(PROJECT_ROOT, candidate),
+    );
+  }
+
+  const resolvedFromRequire = tryResolveModule("sql.js/dist/sql-wasm.wasm");
+  if (resolvedFromRequire) {
+    candidates.add(resolvedFromRequire);
+  }
+
+  candidates.add(
+    path.join(
+      PROJECT_ROOT,
+      "node_modules",
+      "sql.js",
+      "dist",
+      SQL_WASM_FILENAME,
+    ),
+  );
+  candidates.add(path.join(PROJECT_ROOT, "data", SQL_WASM_FILENAME));
+
+  return Array.from(candidates);
+}
+
+function tryResolveModule(specifier: string): string | undefined {
+  try {
+    return require.resolve(specifier);
+  } catch (error) {
+    if (
+      (error as NodeJS.ErrnoException | undefined)?.code === "MODULE_NOT_FOUND"
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 function readMetadata(db: SqlDatabase, key: string): string | undefined {
