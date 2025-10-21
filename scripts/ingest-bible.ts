@@ -41,6 +41,16 @@ const LOCAL_MANIFEST_PATH = path.join(
   "translations-manifest.json",
 );
 
+type PublicManifestConfig = {
+  manifestKey: string;
+  manifestPublicUrl?: string;
+  translationUrlFactory?: (translation: string) => string;
+};
+
+let cachedPublicManifestConfig:
+  | { prefix: string; config: PublicManifestConfig }
+  | undefined;
+
 async function main() {
   await loadEnvFromLocalFile();
 
@@ -236,7 +246,8 @@ async function syncTranslationsWithBlob(): Promise<void> {
     "translations",
   );
   const prefix = blobPrefix();
-  const manifestKey = `${prefix}/manifest.json`;
+  const publicConfig = resolvePublicManifestConfig(prefix);
+  const manifestKey = publicConfig.manifestKey;
   const manifest = await readBlobManifest(manifestKey, token);
   const localManifest = await readLocalManifest();
   let manifestDirty = false;
@@ -297,6 +308,7 @@ async function syncTranslationsWithBlob(): Promise<void> {
           filePath,
           token,
           prefix,
+          publicConfig,
           remoteManifest: manifest,
           localManifest,
           forceUpload,
@@ -387,6 +399,7 @@ type SyncTranslationOptions = {
   remoteManifest: BlobManifest;
   localManifest: BlobManifest;
   forceUpload: boolean;
+  publicConfig: PublicManifestConfig;
 };
 
 type SyncTranslationResult = {
@@ -402,6 +415,7 @@ async function syncTranslationFileToBlob({
   remoteManifest,
   localManifest,
   forceUpload,
+  publicConfig,
 }: SyncTranslationOptions): Promise<SyncTranslationResult> {
   const buffer = await fs.readFile(filePath);
   const hashSha256 = createSha256(buffer);
@@ -417,16 +431,18 @@ async function syncTranslationFileToBlob({
       remoteEntry.hash !== localEntry.hash ||
       remoteEntry.size !== localEntry.size;
 
-    const url =
+    const publicUrl =
       localEntry.url ??
       remoteEntry?.url ??
-      resolvePublicTranslationUrl(translation);
-    const shouldUpdateLocal = typeof url === "string" && localEntry.url !== url;
+      resolvePublicTranslationUrl(translation, publicConfig);
+    const shouldUpdateLocal =
+      typeof publicUrl === "string" && localEntry.url !== publicUrl;
     const shouldUpdateRemote =
-      typeof url === "string" && remoteEntry?.url !== url;
-    const nextEntry: TranslationManifest = shouldUpdateLocal
-      ? { ...localEntry, url }
-      : localEntry;
+      typeof publicUrl === "string" && remoteEntry?.url !== publicUrl;
+    const nextEntry: TranslationManifest =
+      shouldUpdateLocal && typeof publicUrl === "string"
+        ? { ...localEntry, url: publicUrl }
+        : localEntry;
 
     remoteManifest[translation] = nextEntry;
     localManifest[translation] = nextEntry;
@@ -442,22 +458,23 @@ async function syncTranslationFileToBlob({
   }
 
   if (!forceUpload && remoteEntry?.hash === hashSha256) {
-    const url =
+    const publicUrl =
       remoteEntry.url ??
       localEntry?.url ??
-      resolvePublicTranslationUrl(translation);
+      resolvePublicTranslationUrl(translation, publicConfig);
     const shouldUpdateRemote =
-      typeof url === "string" && remoteEntry.url !== url;
-    const nextRemote: TranslationManifest = shouldUpdateRemote
-      ? { ...remoteEntry, url }
-      : remoteEntry;
+      typeof publicUrl === "string" && remoteEntry.url !== publicUrl;
+    const nextRemote: TranslationManifest =
+      shouldUpdateRemote && typeof publicUrl === "string"
+        ? { ...remoteEntry, url: publicUrl }
+        : remoteEntry;
 
     remoteManifest[translation] = nextRemote;
 
     const shouldUpdateLocal =
       !localEntry ||
       localEntry.hash !== hashSha256 ||
-      (typeof url === "string" && localEntry.url !== url);
+      (typeof publicUrl === "string" && localEntry.url !== publicUrl);
 
     if (shouldUpdateLocal) {
       localManifest[translation] = nextRemote;
@@ -492,17 +509,21 @@ async function syncTranslationFileToBlob({
         metadata.contentLength === buffer.byteLength;
 
       if (etag && etag === hashMd5 && sizeMatches) {
-        const url =
+        const publicUrl =
           remoteEntry?.url ??
           localEntry?.url ??
-          resolvePublicTranslationUrl(translation);
+          resolvePublicTranslationUrl(translation, publicConfig);
+        const fallbackUpdatedAt =
+          remoteEntry?.updatedAt ??
+          localEntry?.updatedAt ??
+          new Date().toISOString();
         const entry: TranslationManifest = {
           hash: hashSha256,
           size: buffer.byteLength,
           updatedAt: metadata.lastModified
             ? new Date(metadata.lastModified).toISOString()
-            : new Date().toISOString(),
-          ...(typeof url === "string" ? { url } : {}),
+            : fallbackUpdatedAt,
+          ...(typeof publicUrl === "string" ? { url: publicUrl } : {}),
         };
 
         const remoteChanged =
@@ -547,15 +568,15 @@ async function syncTranslationFileToBlob({
     `Uploaded translation ${translation} to Blob storage (${formatBytes(buffer.byteLength)}).`,
   );
 
-  const url =
+  const publicUrl =
     remoteEntry?.url ??
     localEntry?.url ??
-    resolvePublicTranslationUrl(translation);
+    resolvePublicTranslationUrl(translation, publicConfig);
   const entry: TranslationManifest = {
     hash: hashSha256,
     size: buffer.byteLength,
     updatedAt: new Date().toISOString(),
-    ...(typeof url === "string" ? { url } : {}),
+    ...(typeof publicUrl === "string" ? { url: publicUrl } : {}),
   };
 
   remoteManifest[translation] = entry;
@@ -566,7 +587,8 @@ async function syncTranslationFileToBlob({
     localManifestChanged:
       !localEntry ||
       localEntry.hash !== entry.hash ||
-      localEntry.size !== entry.size,
+      localEntry.size !== entry.size ||
+      localEntry.url !== entry.url,
   };
 }
 
@@ -686,23 +708,106 @@ function blobPrefix(): string {
   return DEFAULT_BLOB_PREFIX;
 }
 
-function resolvePublicTranslationUrl(translation: string): string | null {
-  const template = process.env.TRANSLATIONS_PUBLIC_BASE_URL;
-  if (typeof template !== "string") {
-    return null;
+function resolvePublicManifestConfig(prefix: string): PublicManifestConfig {
+  if (
+    cachedPublicManifestConfig &&
+    cachedPublicManifestConfig.prefix === prefix
+  ) {
+    return cachedPublicManifestConfig.config;
   }
 
-  const trimmed = template.trim();
+  const fallback: PublicManifestConfig = {
+    manifestKey: `${prefix}/manifest.json`,
+  };
+
+  const raw = process.env.TRANSLATIONS_PUBLIC_BASE_URL;
+  if (typeof raw !== "string") {
+    cachedPublicManifestConfig = { prefix, config: fallback };
+    return fallback;
+  }
+
+  const trimmed = raw.trim();
   if (!trimmed) {
-    return null;
+    cachedPublicManifestConfig = { prefix, config: fallback };
+    return fallback;
   }
 
   if (trimmed.includes("{translation}")) {
-    return trimmed.replaceAll("{translation}", translation);
+    const config: PublicManifestConfig = {
+      manifestKey: `${prefix}/manifest.json`,
+      translationUrlFactory: (translation: string) =>
+        trimmed.replaceAll("{translation}", translation),
+    };
+    cachedPublicManifestConfig = { prefix, config };
+    return config;
   }
 
-  const base = trimmed.replace(/\/$/, "");
-  return `${base}/${translation}/${translation}_bible.json`;
+  const isAbsoluteUrl = /^https?:\/\//i.test(trimmed);
+  if (isAbsoluteUrl) {
+    try {
+      const url = new URL(trimmed);
+      const pathname = url.pathname.replace(/^\/+/, "");
+      if (pathname.endsWith(".json")) {
+        const directorySegments = pathname.split("/");
+        directorySegments.pop();
+        const directoryPath = directorySegments.join("/");
+        const baseUrl =
+          directoryPath.length > 0
+            ? `${url.origin}/${directoryPath}`
+            : url.origin;
+        const normalizedBase = baseUrl.replace(/\/$/, "");
+        const config: PublicManifestConfig = {
+          manifestKey: pathname,
+          manifestPublicUrl: url.toString(),
+          translationUrlFactory: (translation: string) =>
+            `${normalizedBase}/${translation}/${translation}_bible.json`,
+        };
+        cachedPublicManifestConfig = { prefix, config };
+        return config;
+      }
+
+      const normalizedBase = url.toString().replace(/\/$/, "");
+      const config: PublicManifestConfig = {
+        manifestKey: `${prefix}/manifest.json`,
+        translationUrlFactory: (translation: string) =>
+          `${normalizedBase}/${translation}/${translation}_bible.json`,
+      };
+      cachedPublicManifestConfig = { prefix, config };
+      return config;
+    } catch {
+      // Fall through to fallback handling.
+    }
+  }
+
+  if (trimmed.endsWith(".json")) {
+    const normalizedPath = trimmed.replace(/^\/+/, "");
+    const config: PublicManifestConfig = {
+      manifestKey: normalizedPath,
+    };
+    cachedPublicManifestConfig = { prefix, config };
+    return config;
+  }
+
+  const normalizedBase = trimmed.replace(/\/$/, "");
+  const config: PublicManifestConfig = {
+    manifestKey: `${prefix}/manifest.json`,
+    translationUrlFactory: (translation: string) =>
+      `${normalizedBase}/${translation}/${translation}_bible.json`,
+  };
+  cachedPublicManifestConfig = { prefix, config };
+  return config;
+}
+
+function resolvePublicTranslationUrl(
+  translation: string,
+  config?: PublicManifestConfig,
+): string | null {
+  const effectiveConfig =
+    config ?? resolvePublicManifestConfig(blobPrefix());
+  if (!effectiveConfig.translationUrlFactory) {
+    return null;
+  }
+  return effectiveConfig.translationUrlFactory(translation);
 }
 
 type TranslationManifest = {
