@@ -18,7 +18,7 @@ const DEFAULT_BLOB_PREFIX = "translations";
 const TRANSLATIONS_MANIFEST_PATH = path.join(
   PROJECT_ROOT,
   "data",
-  "translations-manifest.json"
+  "translations-manifest.json",
 );
 
 type TranslationJson = Record<string, Record<string, Record<string, string>>>;
@@ -114,7 +114,7 @@ export async function searchBible({
     const translated = lookupTranslationText(
       translationJson,
       match.verse,
-      requestedTranslation
+      requestedTranslation,
     );
 
     return {
@@ -170,7 +170,7 @@ async function loadCorpus(): Promise<CorpusData> {
         throw new Error(
           `Unable to read Bible database at ${DATABASE_PATH}. ` +
             "Run `pnpm bible:ingest` to generate it.",
-          { cause: error as Error }
+          { cause: error as Error },
         );
       }
 
@@ -185,14 +185,14 @@ async function loadCorpus(): Promise<CorpusData> {
           : NaN;
         if (!Number.isFinite(dimension) || dimension <= 0) {
           throw new Error(
-            "Invalid or missing embedding dimension metadata in Bible database."
+            "Invalid or missing embedding dimension metadata in Bible database.",
           );
         }
 
         const verses = loadVerses(db, translation);
         if (verses.length === 0) {
           throw new Error(
-            `No verses found in the Bible database for translation ${translation}.`
+            `No verses found in the Bible database for translation ${translation}.`,
           );
         }
 
@@ -225,7 +225,7 @@ async function loadSqlWasmBinary(): Promise<Uint8Array> {
 
           throw new Error(
             `Unable to read SQL.js WASM binary at ${candidate}.`,
-            { cause: error as Error }
+            { cause: error as Error },
           );
         }
       }
@@ -235,7 +235,7 @@ async function loadSqlWasmBinary(): Promise<Uint8Array> {
           "Unable to locate SQL.js WASM binary.",
           `Looked in: ${tried.join(", ") || "none"}.`,
           "Set SQL_JS_WASM_PATH to an absolute path if the binary lives elsewhere.",
-        ].join(" ")
+        ].join(" "),
       );
     })();
   }
@@ -251,7 +251,7 @@ function resolveSqlWasmCandidates(): string[] {
     candidates.add(
       path.isAbsolute(candidate)
         ? candidate
-        : path.join(PROJECT_ROOT, candidate)
+        : path.join(PROJECT_ROOT, candidate),
     );
   }
 
@@ -261,7 +261,13 @@ function resolveSqlWasmCandidates(): string[] {
   }
 
   candidates.add(
-    path.join(PROJECT_ROOT, "node_modules", "sql.js", "dist", SQL_WASM_FILENAME)
+    path.join(
+      PROJECT_ROOT,
+      "node_modules",
+      "sql.js",
+      "dist",
+      SQL_WASM_FILENAME,
+    ),
   );
   candidates.add(path.join(PROJECT_ROOT, "data", SQL_WASM_FILENAME));
 
@@ -283,7 +289,7 @@ function tryResolveModule(specifier: string): string | undefined {
 
 function readMetadata(db: SqlDatabase, key: string): string | undefined {
   const statement = db.prepare(
-    "SELECT value FROM metadata WHERE key = ? LIMIT 1;"
+    "SELECT value FROM metadata WHERE key = ? LIMIT 1;",
   );
 
   try {
@@ -315,7 +321,7 @@ function loadVerses(db: SqlDatabase, translation: string): VerseRecord[] {
       SELECT book, chapter, verse, text, embedding
       FROM verses
       WHERE translation = ?
-    `
+    `,
   );
 
   const verses: VerseRecord[] = [];
@@ -343,14 +349,14 @@ function loadVerses(db: SqlDatabase, translation: string): VerseRecord[] {
 
       if (!(rawEmbedding instanceof Uint8Array)) {
         throw new Error(
-          `Unexpected embedding type for ${book} ${chapter}:${verse}`
+          `Unexpected embedding type for ${book} ${chapter}:${verse}`,
         );
       }
 
       const floatView = new Float32Array(
         rawEmbedding.buffer,
         rawEmbedding.byteOffset,
-        rawEmbedding.byteLength / Float32Array.BYTES_PER_ELEMENT
+        rawEmbedding.byteLength / Float32Array.BYTES_PER_ELEMENT,
       );
       const embedding = new Float32Array(floatView.length);
       embedding.set(floatView);
@@ -371,7 +377,7 @@ function loadVerses(db: SqlDatabase, translation: string): VerseRecord[] {
 }
 
 async function loadTranslationJson(
-  translation: string
+  translation: string,
 ): Promise<TranslationJson> {
   const normalized = translation.toUpperCase();
   let cached = translationCache.get(normalized);
@@ -395,7 +401,7 @@ async function loadTranslationJson(
         } catch (error) {
           console.warn(
             `Unable to load translation ${normalized} from Blob storage.`,
-            error
+            error,
           );
         }
       }
@@ -410,7 +416,7 @@ async function loadTranslationJson(
       throw new Error(
         `Translation ${normalized} is not available. ` +
           `Check that the translation exists in the translations manifest ` +
-          `and that the URLs are accessible from Vercel deployment.`
+          `and that the URLs are accessible from Vercel deployment.`,
       );
     })();
 
@@ -458,7 +464,7 @@ function resolveBlobToken(): string | null {
 }
 
 async function tryLoadTranslationFromManifest(
-  translation: string
+  translation: string,
 ): Promise<TranslationJson | null> {
   const entry = await loadManifestEntry(translation);
   if (!entry?.url) {
@@ -471,14 +477,14 @@ async function tryLoadTranslationFromManifest(
   } catch (error) {
     console.warn(
       `Unable to reach manifest URL for translation ${translation}.`,
-      error
+      error,
     );
     return null;
   }
 
   if (!response.ok) {
     console.warn(
-      `Manifest URL for translation ${translation} returned ${response.status} ${response.statusText}.`
+      `Manifest URL for translation ${translation} returned ${response.status} ${response.statusText}.`,
     );
     return null;
   }
@@ -489,7 +495,7 @@ async function tryLoadTranslationFromManifest(
   } catch (error) {
     console.warn(
       `Manifest URL payload for translation ${translation} is not valid JSON.`,
-      error
+      error,
     );
     return null;
   }
@@ -497,7 +503,7 @@ async function tryLoadTranslationFromManifest(
 
 async function loadTranslationFromBlob(
   translation: string,
-  config: BlobConfig
+  config: BlobConfig,
 ): Promise<TranslationJson | null> {
   const key = `${config.prefix}/${translation}/${translation}_bible.json`;
   const url = `${config.baseUrl}/${key}`;
@@ -513,7 +519,7 @@ async function loadTranslationFromBlob(
   } catch (error) {
     throw new Error(
       `Unable to reach Blob storage for translation ${translation}.`,
-      { cause: error as Error }
+      { cause: error as Error },
     );
   }
 
@@ -523,7 +529,7 @@ async function loadTranslationFromBlob(
 
   if (!response.ok) {
     throw new Error(
-      `Blob storage returned ${response.status} ${response.statusText} for translation ${translation}.`
+      `Blob storage returned ${response.status} ${response.statusText} for translation ${translation}.`,
     );
   }
 
@@ -533,13 +539,13 @@ async function loadTranslationFromBlob(
   } catch (error) {
     throw new Error(
       `Blob translation payload for ${translation} is not valid JSON.`,
-      { cause: error as Error }
+      { cause: error as Error },
     );
   }
 }
 
 async function loadTranslationFromFilesystem(
-  translation: string
+  translation: string,
 ): Promise<TranslationJson> {
   const filePath = path.join(
     PROJECT_ROOT,
@@ -547,7 +553,7 @@ async function loadTranslationFromFilesystem(
     "bible",
     "translations",
     translation,
-    `${translation}_bible.json`
+    `${translation}_bible.json`,
   );
 
   let raw: string;
@@ -556,7 +562,7 @@ async function loadTranslationFromFilesystem(
   } catch (error) {
     throw new Error(
       `Unable to load translation data for ${translation} at ${filePath}.`,
-      { cause: error as Error }
+      { cause: error as Error },
     );
   }
 
@@ -572,26 +578,26 @@ async function loadTranslationFromFilesystem(
 function lookupTranslationText(
   translation: TranslationJson,
   verse: VerseRecord,
-  translationName: string
+  translationName: string,
 ): string {
   const book = translation[verse.book];
   if (!book) {
     throw new Error(
-      `Book ${verse.book} is not available in translation ${translationName}.`
+      `Book ${verse.book} is not available in translation ${translationName}.`,
     );
   }
 
   const chapter = book[String(verse.chapter)];
   if (!chapter) {
     throw new Error(
-      `Chapter ${verse.chapter} is not available in ${verse.book} (${translationName}).`
+      `Chapter ${verse.chapter} is not available in ${verse.book} (${translationName}).`,
     );
   }
 
   const text = chapter[String(verse.verse)];
   if (typeof text !== "string") {
     throw new Error(
-      `Verse ${verse.book} ${verse.chapter}:${verse.verse} is not available in translation ${translationName}.`
+      `Verse ${verse.book} ${verse.chapter}:${verse.verse} is not available in translation ${translationName}.`,
     );
   }
 
@@ -601,7 +607,7 @@ function lookupTranslationText(
 function selectTopMatches(
   verses: VerseRecord[],
   queryVector: Float32Array,
-  limit: number
+  limit: number,
 ): VerseMatch[] {
   if (limit === 0) {
     return [];
@@ -729,7 +735,7 @@ async function loadTranslationsManifest(): Promise<TranslationsManifest> {
 
         console.warn(
           `Unable to read translations manifest at ${TRANSLATIONS_MANIFEST_PATH}.`,
-          error
+          error,
         );
         return {};
       }
@@ -740,7 +746,7 @@ async function loadTranslationsManifest(): Promise<TranslationsManifest> {
       } catch (error) {
         console.warn(
           `Translations manifest at ${TRANSLATIONS_MANIFEST_PATH} is not valid JSON.`,
-          error
+          error,
         );
         return {};
       }
@@ -751,7 +757,7 @@ async function loadTranslationsManifest(): Promise<TranslationsManifest> {
 }
 
 async function loadManifestEntry(
-  translation: string
+  translation: string,
 ): Promise<TranslationManifestEntry | undefined> {
   const manifest = await loadTranslationsManifest();
   return manifest[translation];
