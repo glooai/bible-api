@@ -424,6 +424,10 @@ async function syncTranslationFileToBlob({
 
   const remoteEntry = remoteManifest[translation];
   const localEntry = localManifest[translation];
+  const derivedPublicUrl = resolvePublicTranslationUrl(
+    translation,
+    publicConfig,
+  );
 
   if (!forceUpload && localEntry?.hash === hashSha256) {
     const needsRemoteUpdate =
@@ -431,10 +435,7 @@ async function syncTranslationFileToBlob({
       remoteEntry.hash !== localEntry.hash ||
       remoteEntry.size !== localEntry.size;
 
-    const publicUrl =
-      localEntry.url ??
-      remoteEntry?.url ??
-      resolvePublicTranslationUrl(translation, publicConfig);
+    const publicUrl = derivedPublicUrl ?? localEntry.url ?? remoteEntry?.url;
     const shouldUpdateLocal =
       typeof publicUrl === "string" && localEntry.url !== publicUrl;
     const shouldUpdateRemote =
@@ -458,10 +459,7 @@ async function syncTranslationFileToBlob({
   }
 
   if (!forceUpload && remoteEntry?.hash === hashSha256) {
-    const publicUrl =
-      remoteEntry.url ??
-      localEntry?.url ??
-      resolvePublicTranslationUrl(translation, publicConfig);
+    const publicUrl = derivedPublicUrl ?? localEntry?.url ?? remoteEntry.url;
     const shouldUpdateRemote =
       typeof publicUrl === "string" && remoteEntry.url !== publicUrl;
     const nextRemote: TranslationManifest =
@@ -510,9 +508,7 @@ async function syncTranslationFileToBlob({
 
       if (etag && etag === hashMd5 && sizeMatches) {
         const publicUrl =
-          remoteEntry?.url ??
-          localEntry?.url ??
-          resolvePublicTranslationUrl(translation, publicConfig);
+          derivedPublicUrl ?? localEntry?.url ?? remoteEntry?.url;
         const fallbackUpdatedAt =
           remoteEntry?.updatedAt ??
           localEntry?.updatedAt ??
@@ -568,10 +564,7 @@ async function syncTranslationFileToBlob({
     `Uploaded translation ${translation} to Blob storage (${formatBytes(buffer.byteLength)}).`,
   );
 
-  const publicUrl =
-    remoteEntry?.url ??
-    localEntry?.url ??
-    resolvePublicTranslationUrl(translation, publicConfig);
+  const publicUrl = derivedPublicUrl ?? localEntry?.url ?? remoteEntry?.url;
   const entry: TranslationManifest = {
     hash: hashSha256,
     size: buffer.byteLength,
@@ -802,8 +795,7 @@ function resolvePublicTranslationUrl(
   translation: string,
   config?: PublicManifestConfig,
 ): string | null {
-  const effectiveConfig =
-    config ?? resolvePublicManifestConfig(blobPrefix());
+  const effectiveConfig = config ?? resolvePublicManifestConfig(blobPrefix());
   if (!effectiveConfig.translationUrlFactory) {
     return null;
   }
