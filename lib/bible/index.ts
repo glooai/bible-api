@@ -13,6 +13,8 @@ const PROJECT_ROOT = process.cwd();
 const DATABASE_PATH = path.join(PROJECT_ROOT, "data", "bible.sqlite");
 const SQL_WASM_FILENAME = "sql-wasm.wasm";
 const SQL_JS_WASM_ENV_KEY = "SQL_JS_WASM_PATH";
+const DEFAULT_BLOB_ENDPOINT = "https://blob.vercel-storage.com";
+const DEFAULT_BLOB_PREFIX = "translations";
 
 type TranslationJson = Record<string, Record<string, Record<string, string>>>;
 
@@ -375,33 +377,15 @@ async function loadTranslationJson(
   let cached = translationCache.get(normalized);
   if (!cached) {
     cached = (async () => {
-      const filePath = path.join(
-        PROJECT_ROOT,
-        "lib",
-        "bible",
-        "translations",
-        normalized,
-        `${normalized}_bible.json`,
-      );
-
-      let raw: string;
-      try {
-        raw = await fs.readFile(filePath, "utf8");
-      } catch (error) {
-        throw new Error(
-          `Unable to load translation data for ${normalized} at ${filePath}.`,
-          { cause: error as Error },
-        );
+      const blobConfig = resolveBlobConfig();
+      if (blobConfig) {
+        const remote = await loadTranslationFromBlob(normalized, blobConfig);
+        if (remote) {
+          return remote;
+        }
       }
 
-      try {
-        return JSON.parse(raw) as TranslationJson;
-      } catch (error) {
-        throw new Error(
-          `Translation file for ${normalized} is not valid JSON.`,
-          { cause: error as Error },
-        );
-      }
+      return loadTranslationFromFilesystem(normalized);
     })();
 
     cached.catch(() => {
@@ -412,6 +396,112 @@ async function loadTranslationJson(
   }
 
   return cached;
+}
+
+type BlobConfig = {
+  baseUrl: string;
+  token: string;
+  prefix: string;
+};
+
+function resolveBlobConfig(): BlobConfig | null {
+  const token =
+    process.env.BLOB_READ_ONLY_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN;
+
+  if (!token) {
+    return null;
+  }
+
+  const baseUrl = (
+    process.env.BIBLE_BLOB_ENDPOINT ??
+    process.env.BIBLE_TRANSLATIONS_BLOB_BASE_URL ??
+    DEFAULT_BLOB_ENDPOINT
+  ).replace(/\/+$/, "");
+
+  const prefix =
+    process.env.BIBLE_BLOB_PREFIX ??
+    process.env.BIBLE_TRANSLATIONS_BLOB_PREFIX ??
+    DEFAULT_BLOB_PREFIX;
+
+  return {
+    baseUrl,
+    token,
+    prefix,
+  };
+}
+
+async function loadTranslationFromBlob(
+  translation: string,
+  config: BlobConfig,
+): Promise<TranslationJson | null> {
+  const key = `${config.prefix}/${translation}/${translation}_bible.json`;
+  const url = `${config.baseUrl}/${key}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+      },
+    });
+  } catch (error) {
+    throw new Error(
+      `Unable to reach Blob storage for translation ${translation}.`,
+      { cause: error as Error },
+    );
+  }
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Blob storage returned ${response.status} ${response.statusText} for translation ${translation}.`,
+    );
+  }
+
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw) as TranslationJson;
+  } catch (error) {
+    throw new Error(
+      `Blob translation payload for ${translation} is not valid JSON.`,
+      { cause: error as Error },
+    );
+  }
+}
+
+async function loadTranslationFromFilesystem(
+  translation: string,
+): Promise<TranslationJson> {
+  const filePath = path.join(
+    PROJECT_ROOT,
+    "lib",
+    "bible",
+    "translations",
+    translation,
+    `${translation}_bible.json`,
+  );
+
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath, "utf8");
+  } catch (error) {
+    throw new Error(
+      `Unable to load translation data for ${translation} at ${filePath}.`,
+      { cause: error as Error },
+    );
+  }
+
+  try {
+    return JSON.parse(raw) as TranslationJson;
+  } catch (error) {
+    throw new Error(`Translation file for ${translation} is not valid JSON.`, {
+      cause: error as Error,
+    });
+  }
 }
 
 function lookupTranslationText(

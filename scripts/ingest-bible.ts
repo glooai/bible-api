@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+import { type Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -70,6 +72,8 @@ async function main() {
 
   await writeDatabase(db, options.translation);
   console.log("Done!");
+
+  await syncTranslationsWithBlob();
 }
 
 function projectRoot() {
@@ -204,6 +208,243 @@ function hashToken(token: string, dimension: number): number {
   }
 
   return hash % dimension;
+}
+
+type TranslationManifest = {
+  hash: string;
+  size: number;
+  updatedAt: string;
+};
+
+async function syncTranslationsWithBlob(): Promise<void> {
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!token) {
+    console.warn(
+      "BLOB_READ_WRITE_TOKEN is not set; skipping translation Blob sync.",
+    );
+    return;
+  }
+
+  const translationsDir = path.join(
+    projectRoot(),
+    "lib",
+    "bible",
+    "translations",
+  );
+
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(translationsDir, { withFileTypes: true });
+  } catch (error) {
+    console.warn(
+      `Unable to enumerate translations directory at ${translationsDir}.`,
+      error,
+    );
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const translation = entry.name.toUpperCase();
+    const filePath = path.join(
+      translationsDir,
+      entry.name,
+      `${translation}_bible.json`,
+    );
+
+    if (!(await fileExists(filePath))) {
+      continue;
+    }
+
+    try {
+      await syncTranslationFileToBlob({
+        translation,
+        filePath,
+        token,
+      });
+    } catch (error) {
+      console.warn(
+        `Failed to upload ${translation} translation to Blob storage.`,
+        error,
+      );
+    }
+  }
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+type SyncTranslationOptions = {
+  translation: string;
+  filePath: string;
+  token: string;
+};
+
+async function syncTranslationFileToBlob({
+  translation,
+  filePath,
+  token,
+}: SyncTranslationOptions): Promise<void> {
+  const buffer = await fs.readFile(filePath);
+  const hash = createSha256(buffer);
+  const prefix = blobPrefix();
+  const manifestKey = `${prefix}/${translation}/manifest.json`;
+  const manifest = await readTranslationManifest(manifestKey, token);
+
+  if (manifest?.hash === hash) {
+    console.log(
+      `Blob translation ${translation} is up to date (hash ${hash.slice(0, 8)}).`,
+    );
+    return;
+  }
+
+  const translationKey = `${prefix}/${translation}/${translation}_bible.json`;
+  await putBlobObject({
+    key: translationKey,
+    body: buffer as Uint8Array,
+    token,
+    contentType: "application/json",
+  });
+
+  const newManifest: TranslationManifest = {
+    hash,
+    size: buffer.byteLength,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await putBlobObject({
+    key: manifestKey,
+    body: encodeJson(newManifest),
+    token,
+    contentType: "application/json",
+  });
+
+  console.log(
+    `Uploaded translation ${translation} to Blob storage (${formatBytes(buffer.byteLength)}).`,
+  );
+}
+
+async function readTranslationManifest(
+  key: string,
+  token: string,
+): Promise<TranslationManifest | null> {
+  const response = await fetchBlob(key, token, { method: "GET" });
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      `Unable to read translation manifest at ${key}: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as TranslationManifest;
+  } catch (error) {
+    throw new Error(`Manifest at ${key} is not valid JSON.`, {
+      cause: error as Error,
+    });
+  }
+}
+
+type FetchBlobOptions = {
+  method: "GET" | "HEAD";
+};
+
+async function fetchBlob(
+  key: string,
+  token: string,
+  options: FetchBlobOptions,
+): Promise<Response> {
+  const url = `${blobEndpoint()}/${key}`;
+  return fetch(url, {
+    method: options.method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+type PutBlobOptions = {
+  key: string;
+  body: Uint8Array;
+  token: string;
+  contentType: string;
+};
+
+async function putBlobObject({
+  key,
+  body,
+  token,
+  contentType,
+}: PutBlobOptions): Promise<void> {
+  const url = `${blobEndpoint()}/${key}`;
+  const bodyBytes = new Uint8Array(body);
+  const blob = new Blob([bodyBytes]);
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": contentType,
+      "Content-Length": body.byteLength.toString(),
+    },
+    body: blob as unknown as RequestInit["body"],
+  });
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = await response.text();
+    } catch {
+      detail = "";
+    }
+
+    throw new Error(
+      `Failed to upload ${key} to Blob storage: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`,
+    );
+  }
+}
+
+function blobEndpoint(): string {
+  return (
+    process.env.BIBLE_BLOB_ENDPOINT ?? "https://blob.vercel-storage.com"
+  ).replace(/\/+$/, "");
+}
+
+function blobPrefix(): string {
+  return process.env.BIBLE_BLOB_PREFIX ?? "translations";
+}
+
+function createSha256(buffer: Buffer): string {
+  return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let index = 0;
+
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+
+  return `${value.toFixed(value < 10 && index > 0 ? 1 : 0)} ${units[index]}`;
+}
+
+function encodeJson(value: unknown): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(value));
 }
 
 function ensureSchema(db: SqlDatabase) {
