@@ -21,6 +21,7 @@ beforeEach(() => {
   translationCache.clear();
 
   const fetchMock = vi.fn<typeof fetch>(async (input, _init) => {
+    void _init; // init is unused but part of fetch signature
     const url =
       typeof input === "string"
         ? input
