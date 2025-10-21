@@ -217,7 +217,7 @@ async function syncTranslationsWithBlob(): Promise<void> {
   if (!token) {
     console.warn(
       "BLOB_READ_WRITE_TOKEN is not set; skipping translation Blob sync.",
-    );
+      );
     return;
   }
 
@@ -227,7 +227,6 @@ async function syncTranslationsWithBlob(): Promise<void> {
     "bible",
     "translations",
   );
-
   const prefix = blobPrefix();
   const manifestKey = `${prefix}/manifest.json`;
   const manifest = await readBlobManifest(manifestKey, token);
@@ -291,7 +290,10 @@ async function syncTranslationsWithBlob(): Promise<void> {
         `Updated translation manifest at ${manifestKey} (${Object.keys(manifest).length} entries).`,
       );
     } catch (error) {
-      console.warn("Failed to update translation manifest in Blob storage.", error);
+      console.warn(
+        "Failed to update translation manifest in Blob storage.",
+        error,
+      );
     }
   }
 }
@@ -324,18 +326,11 @@ async function syncTranslationFileToBlob({
   const hash = createSha256(buffer);
   const translationKey = `${prefix}/${translation}/${translation}_bible.json`;
 
-  const remoteHash = await readBlobHash(translationKey, token);
-  if (remoteHash && remoteHash === hash) {
-    console.log(
-      `Blob translation ${translation} is up to date (hash ${hash.slice(0, 8)}).`,
-    );
-    return false;
-  }
-
   const existing = manifest[translation];
+
   if (existing?.hash === hash) {
     console.log(
-      `Manifest indicates ${translation} is up to date (hash ${hash.slice(0, 8)}).`,
+      `Blob translation ${translation} is up to date (hash ${hash.slice(0, 8)}).`,
     );
     return false;
   }
@@ -345,8 +340,11 @@ async function syncTranslationFileToBlob({
     body: buffer as Uint8Array,
     token,
     contentType: "application/json",
-    metadata: { hash },
   });
+
+  console.log(
+    `Uploaded translation ${translation} to Blob storage (${formatBytes(buffer.byteLength)}).`,
+  );
 
   manifest[translation] = {
     hash,
@@ -354,9 +352,6 @@ async function syncTranslationFileToBlob({
     updatedAt: new Date().toISOString(),
   };
 
-  console.log(
-    `Uploaded translation ${translation} to Blob storage (${formatBytes(buffer.byteLength)}).`,
-  );
   return true;
 }
 
@@ -383,7 +378,6 @@ type PutBlobOptions = {
   body: Uint8Array;
   token: string;
   contentType: string;
-  metadata?: Record<string, string>;
 };
 
 async function putBlobObject({
@@ -391,22 +385,16 @@ async function putBlobObject({
   body,
   token,
   contentType,
-  metadata,
 }: PutBlobOptions): Promise<void> {
-  const url = `${blobEndpoint()}/${key}`;
   const bodyBytes = new Uint8Array(body);
   const blob = new Blob([bodyBytes]);
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
     "Content-Type": contentType,
     "Content-Length": body.byteLength.toString(),
+    Authorization: `Bearer ${token}`,
   };
 
-  if (metadata && Object.keys(metadata).length > 0) {
-    headers["x-vercel-blob-additional-metadata"] = encodeMetadata(metadata);
-  }
-
-  const response = await fetch(url, {
+  const response = await fetch(`${blobEndpoint()}/${key}`, {
     method: "PUT",
     headers,
     body: blob as unknown as RequestInit["body"],
@@ -436,13 +424,13 @@ function blobPrefix(): string {
   return process.env.BIBLE_BLOB_PREFIX ?? "translations";
 }
 
-type BlobManifest = Record<string, ManifestEntry>;
-
-type ManifestEntry = {
+type TranslationManifest = {
   hash: string;
   size: number;
   updatedAt: string;
 };
+
+type BlobManifest = Record<string, TranslationManifest>;
 
 function createSha256(buffer: Buffer): string {
   return crypto.createHash("sha256").update(buffer).digest("hex");
@@ -465,33 +453,6 @@ function encodeJson(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value));
 }
 
-function encodeMetadata(metadata: Record<string, string>): string {
-  return Object.entries(metadata)
-    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
-    .join(",");
-}
-
-async function readBlobHash(
-  key: string,
-  token: string,
-): Promise<string | null> {
-  const response = await fetchBlob(key, token, { method: "HEAD" });
-  if (response.status === 404) {
-    return null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Unable to read metadata for ${key}: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  return (
-    response.headers.get("x-vercel-blob-meta-hash") ??
-    response.headers.get("x-vercel-blob-digest")
-  );
-}
-
 async function readBlobManifest(
   key: string,
   token: string,
@@ -512,7 +473,7 @@ async function readBlobManifest(
     const parsed = JSON.parse(text) as BlobManifest;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch (error) {
-    console.warn("Translation manifest is not valid JSON. Recreating.", error);
+    console.warn("Manifest JSON is invalid. Rebuilding.", error);
     return {};
   }
 }
