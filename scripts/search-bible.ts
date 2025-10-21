@@ -185,7 +185,9 @@ async function searchViaApi({
     );
   }
 
-  const url = new URL("/api/search", baseUrl);
+  const url = new URL(baseUrl);
+  const normalizedPath = url.pathname.replace(/\/$/, "");
+  url.pathname = `${normalizedPath}/api/search`;
   url.searchParams.set("term", term);
   url.searchParams.set("translation", translation);
   url.searchParams.set("limit", String(limit));
@@ -204,18 +206,24 @@ async function searchViaApi({
   }
 
   if (!response.ok) {
+    const rawBody = await response.text();
     let detail: string | undefined;
-    try {
-      const body = await response.json();
-      detail =
-        typeof body.error === "string"
-          ? body.error
-          : JSON.stringify(body, null, 2);
-    } catch {
-      detail = await response.text();
+    if (rawBody.trim().length > 0) {
+      try {
+        const parsed = JSON.parse(rawBody) as { error?: unknown };
+        detail =
+          typeof parsed?.error === "string"
+            ? parsed.error
+            : JSON.stringify(parsed, null, 2);
+      } catch {
+        detail = rawBody;
+      }
     }
+
     throw new Error(
-      `Bible API request failed (${response.status} ${response.statusText}): ${detail}`,
+      `Bible API request failed (${response.status} ${response.statusText})${
+        detail ? `: ${detail}` : ""
+      }`,
     );
   }
 
