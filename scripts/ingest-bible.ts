@@ -34,6 +34,8 @@ const DEFAULT_TRANSLATION = "NLT";
 const DEFAULT_DIMENSION = 384;
 
 async function main() {
+  await loadEnvFromLocalFile();
+
   const options = parseOptions(process.argv.slice(2), {
     translation: process.env.BIBLE_TRANSLATION ?? DEFAULT_TRANSLATION,
     dimension: parseDimension(process.env.EMBED_DIM) ?? DEFAULT_DIMENSION,
@@ -445,6 +447,49 @@ function formatBytes(bytes: number): string {
 
 function encodeJson(value: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(value));
+}
+
+async function loadEnvFromLocalFile(): Promise<void> {
+  const envPath = path.join(projectRoot(), ".env.local");
+  let content: string;
+
+  try {
+    content = await fs.readFile(envPath, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+      return;
+    }
+
+    console.warn(`Unable to load environment from ${envPath}.`, error);
+    return;
+  }
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) {
+      continue;
+    }
+
+    const equalsIndex = line.indexOf("=");
+    if (equalsIndex === -1) {
+      continue;
+    }
+
+    const key = line.slice(0, equalsIndex).trim();
+    if (!key) {
+      continue;
+    }
+
+    let value = line.slice(equalsIndex + 1).trim();
+    const quoted = value.match(/^(['"])(.*)\1$/);
+    if (quoted) {
+      value = quoted[2];
+    }
+
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
 }
 
 function ensureSchema(db: SqlDatabase) {
