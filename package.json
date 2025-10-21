@@ -2,6 +2,7 @@
   "name": "bible-api",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "pnpm bible:ingest && next build --turbopack",
@@ -11,7 +12,10 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "bible:ingest": "tsx scripts/ingest-bible"
+    "test:coverage": "vitest run --coverage",
+    "test:load": "tsx scripts/load-test",
+    "bible:ingest": "tsx scripts/ingest-bible",
+    "bible:search": "tsx scripts/search-bible"
   },
   "dependencies": {
     "next": "15.5.6",
@@ -24,6 +28,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "2.1.9",
     "eslint": "^9",
     "eslint-config-next": "15.5.6",
     "lightningcss": "1.30.2",
