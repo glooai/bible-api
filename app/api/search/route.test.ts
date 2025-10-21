@@ -50,7 +50,7 @@ describe("GET /api/search", () => {
     const body = await response.json();
 
     expect(errorSpy).toHaveBeenCalledWith(
-      "API_KEY environment variable is not set"
+      "API_KEY environment variable is not set",
     );
     expect(response.status).toBe(500);
     expect(body).toEqual({
@@ -70,7 +70,7 @@ describe("GET /api/search", () => {
     expect(missingKeyBody).toEqual({ error: "Unauthorized" });
 
     const wrongKeyResponse = await GET(
-      createRequest({ headers: { "x-api-key": "wrong-key" } })
+      createRequest({ headers: { "x-api-key": "wrong-key" } }),
     );
     const wrongKeyBody = await wrongKeyResponse.json();
 
@@ -83,7 +83,7 @@ describe("GET /api/search", () => {
     const { GET } = await loadRoute();
 
     const response = await GET(
-      createRequest({ headers: { "x-api-key": "super-secret-key" } })
+      createRequest({ headers: { "x-api-key": "super-secret-key" } }),
     );
     const body = await response.json();
 
@@ -115,7 +115,7 @@ describe("GET /api/search", () => {
       createRequest({
         headers: { "x-api-key": apiKey },
         search: { term: "love", limit: "5", translation: "KJV" },
-      })
+      }),
     );
     const body = await response.json();
 
@@ -142,7 +142,7 @@ describe("GET /api/search", () => {
       createRequest({
         headers: { "x-api-key": apiKey },
         search: { term: "love", limit: "invalid" },
-      })
+      }),
     );
     const body = await response.json();
 
@@ -165,7 +165,7 @@ describe("GET /api/search", () => {
       createRequest({
         headers: { "x-api-key": apiKey },
         search: { term: "love" },
-      })
+      }),
     );
     const body = await response.json();
 
@@ -197,7 +197,7 @@ describe("GET /api/search", () => {
       createRequest({
         headers: { "x-api-key": apiKey },
         search: { term: "love", maxResults: "3" },
-      })
+      }),
     );
     const body = await response.json();
 
@@ -224,7 +224,7 @@ describe("GET /api/search", () => {
       createRequest({
         headers: { "x-api-key": apiKey },
         search: { term: "love", maxResults: "invalid" },
-      })
+      }),
     );
     const body = await response.json();
 
@@ -244,7 +244,7 @@ describe("GET /api/search", () => {
       createRequest({
         headers: { "x-api-key": apiKey },
         search: { term: "love", maxResults: "-1" },
-      })
+      }),
     );
     const body = await response.json();
 
@@ -264,7 +264,7 @@ describe("GET /api/search", () => {
       createRequest({
         headers: { "x-api-key": apiKey },
         search: { term: "love", maxResults: "1.5" },
-      })
+      }),
     );
     const body = await response.json();
 
@@ -296,7 +296,7 @@ describe("GET /api/search", () => {
       createRequest({
         headers: { "x-api-key": apiKey },
         search: { q: "love" },
-      })
+      }),
     );
     const body = await response.json();
 

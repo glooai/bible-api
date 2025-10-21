@@ -20,13 +20,13 @@ describe("ingest-bible utility functions", () => {
       expect(parseDimension(undefined)).toBeUndefined();
 
       expect(() => parseDimension("invalid")).toThrow(
-        "Invalid embedding dimension: invalid"
+        "Invalid embedding dimension: invalid",
       );
       expect(() => parseDimension("0")).toThrow(
-        "Invalid embedding dimension: 0"
+        "Invalid embedding dimension: 0",
       );
       expect(() => parseDimension("-1")).toThrow(
-        "Invalid embedding dimension: -1"
+        "Invalid embedding dimension: -1",
       );
     });
   });

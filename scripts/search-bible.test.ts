@@ -1,6 +1,4 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import fs from "node:fs";
-
+import { describe, expect, it, vi } from "vitest";
 // Test the utility functions directly since we can't easily import the script
 describe("search-bible utility functions", () => {
   describe("parseArguments", () => {
@@ -140,27 +138,27 @@ describe("search-bible utility functions", () => {
           translation: "KJV",
           limit: 2,
           useApi: true,
-        }
+        },
       );
 
       // Test error cases
       expect(() => parseArguments(["--translation"])).toThrow(
-        "Missing value for --translation flag."
+        "Missing value for --translation flag.",
       );
       expect(() => parseArguments(["--limit"])).toThrow(
-        "Missing value for --limit flag."
+        "Missing value for --limit flag.",
       );
       expect(() => parseArguments(["--unknown"])).toThrow(
-        "Unknown flag: --unknown"
+        "Unknown flag: --unknown",
       );
       expect(() => parseArguments(["--limit", "invalid"])).toThrow(
-        "Limit must be a finite integer."
+        "Limit must be a finite integer.",
       );
       expect(() => parseArguments(["--limit", "0"])).toThrow(
-        "Limit must be greater than zero."
+        "Limit must be greater than zero.",
       );
       expect(() => parseArguments(["--limit", "-1"])).toThrow(
-        "Limit must be greater than zero."
+        "Limit must be greater than zero.",
       );
     });
   });
@@ -185,11 +183,11 @@ describe("search-bible utility functions", () => {
       expect(parseLimit("1")).toBe(1);
 
       expect(() => parseLimit("invalid")).toThrow(
-        "Limit must be a finite integer."
+        "Limit must be a finite integer.",
       );
       expect(() => parseLimit("0")).toThrow("Limit must be greater than zero.");
       expect(() => parseLimit("-1")).toThrow(
-        "Limit must be greater than zero."
+        "Limit must be greater than zero.",
       );
       // Note: parseLimit with "1.5" will return 1 (parseInt truncates decimals)
       // This is the actual behavior in the original code
@@ -214,7 +212,15 @@ describe("search-bible utility functions", () => {
   });
 
   describe("loadEnvFromLocalFile", () => {
-    const loadEnvFromLocalFile = (fsModule: typeof fs) => {
+    type ReadFileSyncMock = ReturnType<
+      typeof vi.fn<(path: string, encoding?: BufferEncoding) => string>
+    >;
+
+    type FsModule = {
+      readFileSync: ReadFileSyncMock;
+    };
+
+    const loadEnvFromLocalFile = (fsModule: FsModule) => {
       const envPath = "/test/.env.local";
       let content: string;
 
@@ -257,13 +263,17 @@ describe("search-bible utility functions", () => {
 
     it("loads environment variables", () => {
       // Create a mock fs module
-      const mockFs = {
-        readFileSync: vi.fn().mockReturnValue(`
+      const mockFs: FsModule = {
+        readFileSync: vi.fn<
+          (path: string, encoding?: BufferEncoding) => string
+        >(
+          () => `
           # Comment
           API_KEY=test-key-123
           BIBLE_API_BASE_URL=http://localhost:3000
           ANOTHER_VAR=value
-        `),
+        `,
+        ),
       };
 
       // Clear any existing env vars
@@ -271,7 +281,7 @@ describe("search-bible utility functions", () => {
       delete process.env.BIBLE_API_BASE_URL;
       delete process.env.ANOTHER_VAR;
 
-      loadEnvFromLocalFile(mockFs as any);
+      loadEnvFromLocalFile(mockFs);
 
       expect(process.env.API_KEY).toBe("test-key-123");
       expect(process.env.BIBLE_API_BASE_URL).toBe("http://localhost:3000");
@@ -286,23 +296,25 @@ describe("search-bible utility functions", () => {
       delete process.env.API_KEY;
       delete process.env.BIBLE_API_BASE_URL;
 
-      loadEnvFromLocalFile(mockFs as any);
+      loadEnvFromLocalFile(mockFs);
 
       expect(process.env.API_KEY).toBe("quoted-key");
       expect(process.env.BIBLE_API_BASE_URL).toBe("http://example.com");
     });
 
     it("handles missing .env.local file gracefully", () => {
-      const mockFs = {
-        readFileSync: vi.fn().mockImplementation(() => {
-          const error = new Error("File not found");
-          (error as any).code = "ENOENT";
+      const mockFs: FsModule = {
+        readFileSync: vi.fn<
+          (path: string, encoding?: BufferEncoding) => string
+        >(() => {
+          const error = new Error("File not found") as NodeJS.ErrnoException;
+          error.code = "ENOENT";
           throw error;
         }),
       };
 
       // Should not throw
-      expect(() => loadEnvFromLocalFile(mockFs as any)).not.toThrow();
+      expect(() => loadEnvFromLocalFile(mockFs)).not.toThrow();
     });
   });
 });

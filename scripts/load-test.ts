@@ -45,13 +45,7 @@ const DEFAULT_TOTAL_REQUESTS = 200;
 const DEFAULT_LIMIT = 5;
 const DEFAULT_TRANSLATION = "NLT";
 const DEFAULT_TERMS = ["love", "hope", "faith", "grace", "peace"];
-const DEFAULT_AGGRESSIVE_TRANSLATIONS = [
-  "KJV",
-  "ESV",
-  "NIV",
-  "NASB",
-  "AMP",
-];
+const DEFAULT_AGGRESSIVE_TRANSLATIONS = ["KJV", "ESV", "NIV", "NASB", "AMP"];
 const DEFAULT_AGGRESSIVE_LIMITS = [DEFAULT_LIMIT, 10, 25, 50];
 const MAX_ERRORS_REPORTED = 20;
 
@@ -77,11 +71,11 @@ if (!isMainThread) {
       await fs.promises.writeFile(reportPath, report, "utf8");
 
       console.log(report);
-      console.log(`\nReport saved to ${path.relative(process.cwd(), reportPath)}`);
-    } catch (error) {
-      console.error(
-        error instanceof Error ? error.message : String(error),
+      console.log(
+        `\nReport saved to ${path.relative(process.cwd(), reportPath)}`,
       );
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
       process.exitCode = 1;
     }
   })();
@@ -108,9 +102,7 @@ async function executeLoadTest(options: LoadTestOptions): Promise<string> {
     }
     for (const error of result.errors) {
       if (aggregatedErrors.length < MAX_ERRORS_REPORTED) {
-        aggregatedErrors.push(
-          `[Worker ${result.workerId}] ${error}`,
-        );
+        aggregatedErrors.push(`[Worker ${result.workerId}] ${error}`);
       }
     }
   }
@@ -120,9 +112,7 @@ async function executeLoadTest(options: LoadTestOptions): Promise<string> {
   const successRate =
     observedRequests === 0 ? 0 : (successes / observedRequests) * 100;
   const throughput =
-    totalDurationMs > 0
-      ? observedRequests / (totalDurationMs / 1000)
-      : 0;
+    totalDurationMs > 0 ? observedRequests / (totalDurationMs / 1000) : 0;
 
   return buildReport({
     options,
@@ -145,7 +135,9 @@ async function runWorkers(options: LoadTestOptions): Promise<{
 }> {
   const workerCount = Math.min(options.concurrency, options.totalRequests);
   if (workerCount <= 0) {
-    throw new Error("Concurrency and total requests must be greater than zero.");
+    throw new Error(
+      "Concurrency and total requests must be greater than zero.",
+    );
   }
 
   const iterationsPerWorker = Math.floor(options.totalRequests / workerCount);
@@ -158,8 +150,7 @@ async function runWorkers(options: LoadTestOptions): Promise<{
   const workerPromises: Array<Promise<WorkerResult>> = [];
 
   for (let workerId = 0; workerId < workerCount; workerId += 1) {
-    const iterations =
-      iterationsPerWorker + (remainder > 0 ? 1 : 0);
+    const iterations = iterationsPerWorker + (remainder > 0 ? 1 : 0);
     remainder = Math.max(0, remainder - 1);
 
     if (iterations === 0) {
@@ -231,9 +222,8 @@ async function runWorker(data: WorkerData): Promise<WorkerResult> {
     const term =
       data.terms[Math.floor(Math.random() * data.terms.length)] ?? "love";
     const translation =
-      data.translations[
-        Math.floor(Math.random() * data.translations.length)
-      ] ?? DEFAULT_TRANSLATION;
+      data.translations[Math.floor(Math.random() * data.translations.length)] ??
+      DEFAULT_TRANSLATION;
     const limit =
       data.limits[Math.floor(Math.random() * data.limits.length)] ??
       DEFAULT_LIMIT;
@@ -256,16 +246,14 @@ async function runWorker(data: WorkerData): Promise<WorkerResult> {
       if (!response.ok) {
         failures += 1;
         if (errors.length < data.maxErrors) {
-          errors.push(
-            `HTTP ${response.status} ${response.statusText}`,
-          );
+          errors.push(`HTTP ${response.status} ${response.statusText}`);
         }
         continue;
       }
 
-      const payload = await response
-        .json()
-        .catch(() => undefined) as { results?: unknown } | undefined;
+      const payload = (await response.json().catch(() => undefined)) as
+        | { results?: unknown }
+        | undefined;
 
       if (!payload || !Array.isArray(payload.results)) {
         failures += 1;
@@ -542,8 +530,7 @@ function parseArguments(argv: string[]): LoadTestOptions {
     throw new Error(`Unknown option: ${arg}`);
   }
 
-  const termList =
-    terms.size > 0 ? [...terms] : [...DEFAULT_TERMS];
+  const termList = terms.size > 0 ? [...terms] : [...DEFAULT_TERMS];
 
   if (translationSet.size === 0) {
     translationSet.add(DEFAULT_TRANSLATION);

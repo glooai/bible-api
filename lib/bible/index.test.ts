@@ -23,7 +23,7 @@ describe("searchBible", () => {
       "NLT",
       results[0].book,
       results[0].chapter,
-      results[0].verse
+      results[0].verse,
     );
 
     expect(results[0].text).toBe(expectedText);
@@ -48,14 +48,14 @@ describe("searchBible", () => {
       (result) =>
         result.book === seed.book &&
         result.chapter === seed.chapter &&
-        result.verse === seed.verse
+        result.verse === seed.verse,
     );
 
     expect(match?.translation).toBe("KJV");
 
     if (!match) {
       throw new Error(
-        "Unable to locate corresponding verse in translated results."
+        "Unable to locate corresponding verse in translated results.",
       );
     }
 
@@ -63,7 +63,7 @@ describe("searchBible", () => {
       "KJV",
       match.book,
       match.chapter,
-      match.verse
+      match.verse,
     );
 
     expect(match.text).toBe(expectedText);
@@ -117,14 +117,14 @@ describe("searchBible", () => {
       searchBible({
         term: "love",
         limit: -1,
-      })
+      }),
     ).rejects.toThrow("Search result limit cannot be negative.");
 
     await expect(
       searchBible({
         term: "love",
         limit: Infinity,
-      })
+      }),
     ).rejects.toThrow("Search result limit must be a finite number.");
   });
 
@@ -152,7 +152,7 @@ async function getTranslationText(
   translation: string,
   book: string,
   chapter: number,
-  verse: number
+  verse: number,
 ): Promise<string> {
   const data = await loadTranslationJson(translation);
   const chapterData = data[book]?.[String(chapter)];
@@ -160,7 +160,7 @@ async function getTranslationText(
 
   if (typeof text !== "string") {
     throw new Error(
-      `Missing ${book} ${chapter}:${verse} in translation ${translation}`
+      `Missing ${book} ${chapter}:${verse} in translation ${translation}`,
     );
   }
 
@@ -168,7 +168,7 @@ async function getTranslationText(
 }
 
 async function loadTranslationJson(
-  translation: string
+  translation: string,
 ): Promise<TranslationJson> {
   const key = translation.toUpperCase();
   let cached = translationCache.get(key);
@@ -181,7 +181,7 @@ async function loadTranslationJson(
         "bible",
         "translations",
         key,
-        `${key}_bible.json`
+        `${key}_bible.json`,
       );
 
       const raw = await fs.readFile(filePath, "utf8");
