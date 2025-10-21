@@ -217,7 +217,7 @@ async function syncTranslationsWithBlob(): Promise<void> {
   if (!token) {
     console.warn(
       "BLOB_READ_WRITE_TOKEN is not set; skipping translation Blob sync.",
-      );
+    );
     return;
   }
 
@@ -364,12 +364,13 @@ async function fetchBlob(
   token: string,
   options: FetchBlobOptions,
 ): Promise<Response> {
-  const url = `${blobEndpoint()}/${key}`;
-  return fetch(url, {
+  const url = new URL(`${blobEndpoint()}/${key}`);
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+
+  return fetch(url.toString(), {
     method: options.method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
 }
 
