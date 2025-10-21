@@ -417,29 +417,60 @@ async function syncTranslationFileToBlob({
       remoteEntry.hash !== localEntry.hash ||
       remoteEntry.size !== localEntry.size;
 
-    remoteManifest[translation] = localEntry;
+    const url =
+      localEntry.url ??
+      remoteEntry?.url ??
+      resolvePublicTranslationUrl(translation);
+    const shouldUpdateLocal = typeof url === "string" && localEntry.url !== url;
+    const shouldUpdateRemote =
+      typeof url === "string" && remoteEntry?.url !== url;
+    const nextEntry: TranslationManifest = shouldUpdateLocal
+      ? { ...localEntry, url }
+      : localEntry;
+
+    remoteManifest[translation] = nextEntry;
+    localManifest[translation] = nextEntry;
 
     console.log(
       `Translation ${translation} matches local manifest (hash ${hashSha256.slice(0, 8)}). Skipping upload.`,
     );
 
     return {
-      remoteManifestChanged: needsRemoteUpdate,
-      localManifestChanged: false,
+      remoteManifestChanged: needsRemoteUpdate || shouldUpdateRemote,
+      localManifestChanged: shouldUpdateLocal,
     };
   }
 
   if (!forceUpload && remoteEntry?.hash === hashSha256) {
-    if (!localEntry || localEntry.hash !== hashSha256) {
-      localManifest[translation] = remoteEntry;
-      return { remoteManifestChanged: false, localManifestChanged: true };
+    const url =
+      remoteEntry.url ??
+      localEntry?.url ??
+      resolvePublicTranslationUrl(translation);
+    const shouldUpdateRemote =
+      typeof url === "string" && remoteEntry.url !== url;
+    const nextRemote: TranslationManifest = shouldUpdateRemote
+      ? { ...remoteEntry, url }
+      : remoteEntry;
+
+    remoteManifest[translation] = nextRemote;
+
+    const shouldUpdateLocal =
+      !localEntry ||
+      localEntry.hash !== hashSha256 ||
+      (typeof url === "string" && localEntry.url !== url);
+
+    if (shouldUpdateLocal) {
+      localManifest[translation] = nextRemote;
     }
 
     console.log(
       `Blob translation ${translation} is up to date (hash ${hashSha256.slice(0, 8)}).`,
     );
 
-    return { remoteManifestChanged: false, localManifestChanged: false };
+    return {
+      remoteManifestChanged: shouldUpdateRemote,
+      localManifestChanged: shouldUpdateLocal,
+    };
   }
 
   let metadata: BlobMetadata | null = null;
@@ -461,22 +492,29 @@ async function syncTranslationFileToBlob({
         metadata.contentLength === buffer.byteLength;
 
       if (etag && etag === hashMd5 && sizeMatches) {
+        const url =
+          remoteEntry?.url ??
+          localEntry?.url ??
+          resolvePublicTranslationUrl(translation);
         const entry: TranslationManifest = {
           hash: hashSha256,
           size: buffer.byteLength,
           updatedAt: metadata.lastModified
             ? new Date(metadata.lastModified).toISOString()
             : new Date().toISOString(),
+          ...(typeof url === "string" ? { url } : {}),
         };
 
         const remoteChanged =
           !remoteEntry ||
           remoteEntry.hash !== entry.hash ||
-          remoteEntry.size !== entry.size;
+          remoteEntry.size !== entry.size ||
+          remoteEntry.url !== entry.url;
         const localChanged =
           !localEntry ||
           localEntry.hash !== entry.hash ||
-          localEntry.size !== entry.size;
+          localEntry.size !== entry.size ||
+          localEntry.url !== entry.url;
 
         remoteManifest[translation] = entry;
         localManifest[translation] = entry;
@@ -509,10 +547,15 @@ async function syncTranslationFileToBlob({
     `Uploaded translation ${translation} to Blob storage (${formatBytes(buffer.byteLength)}).`,
   );
 
+  const url =
+    remoteEntry?.url ??
+    localEntry?.url ??
+    resolvePublicTranslationUrl(translation);
   const entry: TranslationManifest = {
     hash: hashSha256,
     size: buffer.byteLength,
     updatedAt: new Date().toISOString(),
+    ...(typeof url === "string" ? { url } : {}),
   };
 
   remoteManifest[translation] = entry;
@@ -643,10 +686,30 @@ function blobPrefix(): string {
   return DEFAULT_BLOB_PREFIX;
 }
 
+function resolvePublicTranslationUrl(translation: string): string | null {
+  const template = process.env.TRANSLATIONS_PUBLIC_BASE_URL;
+  if (typeof template !== "string") {
+    return null;
+  }
+
+  const trimmed = template.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.includes("{translation}")) {
+    return trimmed.replaceAll("{translation}", translation);
+  }
+
+  const base = trimmed.replace(/\/$/, "");
+  return `${base}/${translation}/${translation}_bible.json`;
+}
+
 type TranslationManifest = {
   hash: string;
   size: number;
   updatedAt: string;
+  url?: string;
 };
 
 type BlobManifest = Record<string, TranslationManifest>;

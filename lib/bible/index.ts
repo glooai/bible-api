@@ -15,6 +15,11 @@ const SQL_WASM_FILENAME = "sql-wasm.wasm";
 const SQL_JS_WASM_ENV_KEY = "SQL_JS_WASM_PATH";
 const DEFAULT_BLOB_ENDPOINT = "https://blob.vercel-storage.com";
 const DEFAULT_BLOB_PREFIX = "translations";
+const TRANSLATIONS_MANIFEST_PATH = path.join(
+  PROJECT_ROOT,
+  "data",
+  "translations-manifest.json",
+);
 
 type TranslationJson = Record<string, Record<string, Record<string, string>>>;
 
@@ -58,6 +63,7 @@ export type BibleSearchResult = {
 
 let sqlModulePromise: Promise<SqlJs> | undefined;
 let corpusPromise: Promise<CorpusData> | undefined;
+let manifestPromise: Promise<TranslationsManifest> | undefined;
 const translationCache = new Map<string, Promise<TranslationJson>>();
 
 export async function searchBible({
@@ -377,11 +383,24 @@ async function loadTranslationJson(
   let cached = translationCache.get(normalized);
   if (!cached) {
     cached = (async () => {
+      const manifestTranslation =
+        await tryLoadTranslationFromManifest(normalized);
+      if (manifestTranslation) {
+        return manifestTranslation;
+      }
+
       const blobConfig = resolveBlobConfig();
       if (blobConfig) {
-        const remote = await loadTranslationFromBlob(normalized, blobConfig);
-        if (remote) {
-          return remote;
+        try {
+          const remote = await loadTranslationFromBlob(normalized, blobConfig);
+          if (remote) {
+            return remote;
+          }
+        } catch (error) {
+          console.warn(
+            `Unable to load translation ${normalized} from Blob storage.`,
+            error,
+          );
         }
       }
 
@@ -405,7 +424,7 @@ type BlobConfig = {
 };
 
 function resolveBlobConfig(): BlobConfig | null {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const token = resolveBlobToken();
 
   if (!token) {
     return null;
@@ -419,6 +438,54 @@ function resolveBlobConfig(): BlobConfig | null {
     token,
     prefix,
   };
+}
+
+function resolveBlobToken(): string | null {
+  const value = process.env.BLOB_READ_WRITE_TOKEN;
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function tryLoadTranslationFromManifest(
+  translation: string,
+): Promise<TranslationJson | null> {
+  const entry = await loadManifestEntry(translation);
+  if (!entry?.url) {
+    return null;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(entry.url);
+  } catch (error) {
+    console.warn(
+      `Unable to reach manifest URL for translation ${translation}.`,
+      error,
+    );
+    return null;
+  }
+
+  if (!response.ok) {
+    console.warn(
+      `Manifest URL for translation ${translation} returned ${response.status} ${response.statusText}.`,
+    );
+    return null;
+  }
+
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw) as TranslationJson;
+  } catch (error) {
+    console.warn(
+      `Manifest URL payload for translation ${translation} is not valid JSON.`,
+      error,
+    );
+    return null;
+  }
 }
 
 async function loadTranslationFromBlob(
@@ -631,4 +698,73 @@ function isZeroVector(vector: Float32Array): boolean {
     }
   }
   return true;
+}
+
+type TranslationManifestEntry = {
+  hash: string;
+  size: number;
+  updatedAt: string;
+  url?: string;
+};
+
+type TranslationsManifest = Record<string, TranslationManifestEntry>;
+
+async function loadTranslationsManifest(): Promise<TranslationsManifest> {
+  if (!manifestPromise) {
+    manifestPromise = (async () => {
+      let raw: string;
+      try {
+        raw = await fs.readFile(TRANSLATIONS_MANIFEST_PATH, "utf8");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
+          return {};
+        }
+
+        console.warn(
+          `Unable to read translations manifest at ${TRANSLATIONS_MANIFEST_PATH}.`,
+          error,
+        );
+        return {};
+      }
+
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        return isTranslationsManifest(parsed) ? parsed : {};
+      } catch (error) {
+        console.warn(
+          `Translations manifest at ${TRANSLATIONS_MANIFEST_PATH} is not valid JSON.`,
+          error,
+        );
+        return {};
+      }
+    })();
+  }
+
+  return manifestPromise;
+}
+
+async function loadManifestEntry(
+  translation: string,
+): Promise<TranslationManifestEntry | undefined> {
+  const manifest = await loadTranslationsManifest();
+  return manifest[translation];
+}
+
+function isTranslationsManifest(value: unknown): value is TranslationsManifest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return Object.values(value as Record<string, unknown>).every((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return false;
+    }
+
+    const manifestEntry = entry as TranslationManifestEntry;
+    return (
+      typeof manifestEntry.hash === "string" &&
+      typeof manifestEntry.size === "number" &&
+      typeof manifestEntry.updatedAt === "string"
+    );
+  });
 }
