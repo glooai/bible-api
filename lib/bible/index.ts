@@ -15,11 +15,6 @@ const SQL_WASM_FILENAME = "sql-wasm.wasm";
 const SQL_JS_WASM_ENV_KEY = "SQL_JS_WASM_PATH";
 const DEFAULT_BLOB_ENDPOINT = "https://blob.vercel-storage.com";
 const DEFAULT_BLOB_PREFIX = "translations";
-const TRANSLATIONS_MANIFEST_PATH = path.join(
-  PROJECT_ROOT,
-  "data",
-  "translations-manifest.json",
-);
 
 type TranslationJson = Record<string, Record<string, Record<string, string>>>;
 
@@ -63,7 +58,6 @@ export type BibleSearchResult = {
 
 let sqlModulePromise: Promise<SqlJs> | undefined;
 let corpusPromise: Promise<CorpusData> | undefined;
-let manifestPromise: Promise<TranslationsManifest> | undefined;
 const translationCache = new Map<string, Promise<TranslationJson>>();
 
 export async function searchBible({
@@ -383,41 +377,8 @@ async function loadTranslationJson(
   let cached = translationCache.get(normalized);
   if (!cached) {
     cached = (async () => {
-      // First try to load from manifest URLs (for Vercel deployment)
-      const manifestTranslation =
-        await tryLoadTranslationFromManifest(normalized);
-      if (manifestTranslation) {
-        return manifestTranslation;
-      }
-
-      // If manifest loading fails, try Blob storage as fallback
       const blobConfig = resolveBlobConfig();
-      if (blobConfig) {
-        try {
-          const remote = await loadTranslationFromBlob(normalized, blobConfig);
-          if (remote) {
-            return remote;
-          }
-        } catch (error) {
-          console.warn(
-            `Unable to load translation ${normalized} from Blob storage.`,
-            error,
-          );
-        }
-      }
-
-      // Only fall back to filesystem in development/local environment
-      // In production (Vercel), this will fail as expected
-      if (process.env.NODE_ENV === "development") {
-        return loadTranslationFromFilesystem(normalized);
-      }
-
-      // In production, throw a clear error about missing translation data
-      throw new Error(
-        `Translation ${normalized} is not available. ` +
-          `Check that the translation exists in the translations manifest ` +
-          `and that the URLs are accessible from Vercel deployment.`,
-      );
+      return loadTranslationFromBlob(normalized, blobConfig);
     })();
 
     cached.catch(() => {
@@ -436,11 +397,13 @@ type BlobConfig = {
   prefix: string;
 };
 
-function resolveBlobConfig(): BlobConfig | null {
+function resolveBlobConfig(): BlobConfig {
   const token = resolveBlobToken();
 
   if (!token) {
-    return null;
+    throw new Error(
+      "BLOB_READ_WRITE_TOKEN is not set. Unable to fetch translations from Vercel Blob.",
+    );
   }
 
   const baseUrl = DEFAULT_BLOB_ENDPOINT;
@@ -463,48 +426,10 @@ function resolveBlobToken(): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-async function tryLoadTranslationFromManifest(
-  translation: string,
-): Promise<TranslationJson | null> {
-  const entry = await loadManifestEntry(translation);
-  if (!entry?.url) {
-    return null;
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(entry.url);
-  } catch (error) {
-    console.warn(
-      `Unable to reach manifest URL for translation ${translation}.`,
-      error,
-    );
-    return null;
-  }
-
-  if (!response.ok) {
-    console.warn(
-      `Manifest URL for translation ${translation} returned ${response.status} ${response.statusText}.`,
-    );
-    return null;
-  }
-
-  const raw = await response.text();
-  try {
-    return JSON.parse(raw) as TranslationJson;
-  } catch (error) {
-    console.warn(
-      `Manifest URL payload for translation ${translation} is not valid JSON.`,
-      error,
-    );
-    return null;
-  }
-}
-
 async function loadTranslationFromBlob(
   translation: string,
   config: BlobConfig,
-): Promise<TranslationJson | null> {
+): Promise<TranslationJson> {
   const key = `${config.prefix}/${translation}/${translation}_bible.json`;
   const url = `${config.baseUrl}/${key}`;
 
@@ -524,7 +449,10 @@ async function loadTranslationFromBlob(
   }
 
   if (response.status === 404) {
-    return null;
+    throw new Error(
+      `Translation ${translation} is not available in Vercel Blob storage at ${key}. ` +
+        "Run `pnpm bible:ingest` to upload it or verify the Blob prefix.",
+    );
   }
 
   if (!response.ok) {
@@ -541,37 +469,6 @@ async function loadTranslationFromBlob(
       `Blob translation payload for ${translation} is not valid JSON.`,
       { cause: error as Error },
     );
-  }
-}
-
-async function loadTranslationFromFilesystem(
-  translation: string,
-): Promise<TranslationJson> {
-  const filePath = path.join(
-    PROJECT_ROOT,
-    "lib",
-    "bible",
-    "translations",
-    translation,
-    `${translation}_bible.json`,
-  );
-
-  let raw: string;
-  try {
-    raw = await fs.readFile(filePath, "utf8");
-  } catch (error) {
-    throw new Error(
-      `Unable to load translation data for ${translation} at ${filePath}.`,
-      { cause: error as Error },
-    );
-  }
-
-  try {
-    return JSON.parse(raw) as TranslationJson;
-  } catch (error) {
-    throw new Error(`Translation file for ${translation} is not valid JSON.`, {
-      cause: error as Error,
-    });
   }
 }
 
@@ -711,73 +608,4 @@ function isZeroVector(vector: Float32Array): boolean {
     }
   }
   return true;
-}
-
-type TranslationManifestEntry = {
-  hash: string;
-  size: number;
-  updatedAt: string;
-  url?: string;
-};
-
-type TranslationsManifest = Record<string, TranslationManifestEntry>;
-
-async function loadTranslationsManifest(): Promise<TranslationsManifest> {
-  if (!manifestPromise) {
-    manifestPromise = (async () => {
-      let raw: string;
-      try {
-        raw = await fs.readFile(TRANSLATIONS_MANIFEST_PATH, "utf8");
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
-          return {};
-        }
-
-        console.warn(
-          `Unable to read translations manifest at ${TRANSLATIONS_MANIFEST_PATH}.`,
-          error,
-        );
-        return {};
-      }
-
-      try {
-        const parsed = JSON.parse(raw) as unknown;
-        return isTranslationsManifest(parsed) ? parsed : {};
-      } catch (error) {
-        console.warn(
-          `Translations manifest at ${TRANSLATIONS_MANIFEST_PATH} is not valid JSON.`,
-          error,
-        );
-        return {};
-      }
-    })();
-  }
-
-  return manifestPromise;
-}
-
-async function loadManifestEntry(
-  translation: string,
-): Promise<TranslationManifestEntry | undefined> {
-  const manifest = await loadTranslationsManifest();
-  return manifest[translation];
-}
-
-function isTranslationsManifest(value: unknown): value is TranslationsManifest {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  return Object.values(value as Record<string, unknown>).every((entry) => {
-    if (!entry || typeof entry !== "object") {
-      return false;
-    }
-
-    const manifestEntry = entry as TranslationManifestEntry;
-    return (
-      typeof manifestEntry.hash === "string" &&
-      typeof manifestEntry.size === "number" &&
-      typeof manifestEntry.updatedAt === "string"
-    );
-  });
 }

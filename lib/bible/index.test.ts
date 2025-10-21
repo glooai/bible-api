@@ -1,13 +1,75 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { searchBible } from "./index";
 
 type TranslationJson = Record<string, Record<string, Record<string, string>>>;
 
 const translationCache = new Map<string, Promise<TranslationJson>>();
+const translationsDir = path.join(
+  process.cwd(),
+  "lib",
+  "bible",
+  "translations",
+);
+const originalBlobToken = process.env.BLOB_READ_WRITE_TOKEN;
+
+beforeEach(() => {
+  process.env.BLOB_READ_WRITE_TOKEN = "test-token";
+  translationCache.clear();
+
+  const fetchMock = vi.fn<typeof fetch>(async (input, _init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+
+    if (!url.startsWith("https://blob.vercel-storage.com/")) {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    const match = url.match(/translations\/([^/]+)\/\1_bible\.json$/i);
+    if (!match) {
+      return new Response("Not Found", { status: 404 });
+    }
+
+    const translation = match[1].toUpperCase();
+    const filePath = path.join(
+      translationsDir,
+      translation,
+      `${translation}_bible.json`,
+    );
+
+    try {
+      const raw = await fs.readFile(filePath, "utf8");
+      return new Response(raw, {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+    } catch {
+      return new Response("Not Found", { status: 404 });
+    }
+  });
+
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+afterEach(() => {
+  if (typeof originalBlobToken === "string") {
+    process.env.BLOB_READ_WRITE_TOKEN = originalBlobToken;
+  } else {
+    delete process.env.BLOB_READ_WRITE_TOKEN;
+  }
+
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("searchBible", () => {
   it("returns NLT verses by default", async () => {
