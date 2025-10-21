@@ -405,23 +405,14 @@ type BlobConfig = {
 };
 
 function resolveBlobConfig(): BlobConfig | null {
-  const token =
-    process.env.BLOB_READ_ONLY_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN;
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
 
   if (!token) {
     return null;
   }
 
-  const baseUrl = (
-    process.env.BIBLE_BLOB_ENDPOINT ??
-    process.env.BIBLE_TRANSLATIONS_BLOB_BASE_URL ??
-    DEFAULT_BLOB_ENDPOINT
-  ).replace(/\/+$/, "");
-
-  const prefix =
-    process.env.BIBLE_BLOB_PREFIX ??
-    process.env.BIBLE_TRANSLATIONS_BLOB_PREFIX ??
-    DEFAULT_BLOB_PREFIX;
+  const baseUrl = DEFAULT_BLOB_ENDPOINT;
+  const prefix = DEFAULT_BLOB_PREFIX;
 
   return {
     baseUrl,

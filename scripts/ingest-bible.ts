@@ -32,6 +32,8 @@ type SqlDatabase = InstanceType<SqlJs["Database"]>;
 
 const DEFAULT_TRANSLATION = "NLT";
 const DEFAULT_DIMENSION = 384;
+const DEFAULT_BLOB_ENDPOINT = "https://blob.vercel-storage.com";
+const DEFAULT_BLOB_PREFIX = "translations";
 
 async function main() {
   await loadEnvFromLocalFile();
@@ -420,13 +422,11 @@ async function putBlobObject({
 }
 
 function blobEndpoint(): string {
-  return (
-    process.env.BIBLE_BLOB_ENDPOINT ?? "https://blob.vercel-storage.com"
-  ).replace(/\/+$/, "");
+  return DEFAULT_BLOB_ENDPOINT;
 }
 
 function blobPrefix(): string {
-  return process.env.BIBLE_BLOB_PREFIX ?? "translations";
+  return DEFAULT_BLOB_PREFIX;
 }
 
 type TranslationManifest = {
