@@ -185,7 +185,9 @@ async function searchViaApi({
     );
   }
 
-  const url = new URL("/api/search", baseUrl);
+  const url = new URL(baseUrl);
+  const normalizedPath = url.pathname.replace(/\/$/, "");
+  url.pathname = `${normalizedPath}/api/search`;
   url.searchParams.set("term", term);
   url.searchParams.set("translation", translation);
   url.searchParams.set("limit", String(limit));
