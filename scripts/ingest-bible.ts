@@ -429,31 +429,35 @@ async function syncTranslationFileToBlob({
     publicConfig,
   );
 
-  if (!forceUpload && localEntry?.hash === hashSha256) {
-    const needsRemoteUpdate =
-      !remoteEntry ||
-      remoteEntry.hash !== localEntry.hash ||
-      remoteEntry.size !== localEntry.size;
-
-    const publicUrl = derivedPublicUrl ?? localEntry.url ?? remoteEntry?.url;
+  if (
+    !forceUpload &&
+    localEntry?.hash === hashSha256 &&
+    remoteEntry?.hash === hashSha256 &&
+    remoteEntry.size === buffer.byteLength
+  ) {
+    const publicUrl = derivedPublicUrl ?? localEntry.url ?? remoteEntry.url;
     const shouldUpdateLocal =
       typeof publicUrl === "string" && localEntry.url !== publicUrl;
     const shouldUpdateRemote =
-      typeof publicUrl === "string" && remoteEntry?.url !== publicUrl;
-    const nextEntry: TranslationManifest =
+      typeof publicUrl === "string" && remoteEntry.url !== publicUrl;
+    const nextLocal: TranslationManifest =
       shouldUpdateLocal && typeof publicUrl === "string"
         ? { ...localEntry, url: publicUrl }
         : localEntry;
+    const nextRemote: TranslationManifest =
+      shouldUpdateRemote && typeof publicUrl === "string"
+        ? { ...remoteEntry, url: publicUrl }
+        : remoteEntry;
 
-    remoteManifest[translation] = nextEntry;
-    localManifest[translation] = nextEntry;
+    remoteManifest[translation] = nextRemote;
+    localManifest[translation] = nextLocal;
 
     console.log(
-      `Translation ${translation} matches local manifest (hash ${hashSha256.slice(0, 8)}). Skipping upload.`,
+      `Translation ${translation} matches existing Blob object (hash ${hashSha256.slice(0, 8)}). Skipping upload.`,
     );
 
     return {
-      remoteManifestChanged: needsRemoteUpdate || shouldUpdateRemote,
+      remoteManifestChanged: shouldUpdateRemote,
       localManifestChanged: shouldUpdateLocal,
     };
   }
